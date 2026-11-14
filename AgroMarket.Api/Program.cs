@@ -5,6 +5,7 @@ using AgroMarket.Api.Database;
 using AgroMarket.Api.Database.Entities;
 using AgroMarket.Api.Features.Admin;
 using AgroMarket.Api.Features.Auth;
+using AgroMarket.Api.Features.Logistics;
 using AgroMarket.Api.Features.Orders;
 using AgroMarket.Api.Features.Products;
 using AgroMarket.Api.Features.Profiles;
@@ -61,6 +62,7 @@ builder.Services.Configure<TelegramOptions>(builder.Configuration.GetSection(Tel
 builder.Services.Configure<R2Options>(builder.Configuration.GetSection(R2Options.SectionName));
 builder.Services.Configure<MarketplaceOptions>(builder.Configuration.GetSection(MarketplaceOptions.SectionName));
 builder.Services.AddSingleton<IObjectStorageService, R2ObjectStorageService>();
+builder.Services.AddHttpClient<ITelegramNotifier, TelegramBotService>();
 builder.Services.AddHostedService<OrderExpirationWorker>();
 
 var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
@@ -101,6 +103,8 @@ builder.Services
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy(AuthorizationPolicies.Admin, policy =>
         policy.RequireRole(nameof(UserRole.Admin)))
+    .AddPolicy(AuthorizationPolicies.AdminOrDriver, policy =>
+        policy.RequireRole(nameof(UserRole.Admin), nameof(UserRole.Driver)))
     .AddPolicy(AuthorizationPolicies.VerifiedUser, policy =>
         policy.RequireClaim("is_verified", "true"))
     .AddPolicy(AuthorizationPolicies.VerifiedFarmer, policy =>
@@ -147,6 +151,7 @@ api.MapAdminEndpoints();
 api.MapProfileEndpoints();
 api.MapProductEndpoints();
 api.MapOrderEndpoints();
+api.MapLogisticsEndpoints();
 
 app.Run();
 

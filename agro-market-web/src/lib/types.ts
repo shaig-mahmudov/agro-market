@@ -172,3 +172,29 @@ export interface CheckoutGroup {
   orders: Order[];
 }
 
+export type DeliveryRunStatus = "Planned" | "PickingUp" | "InTransit" | "Completed";
+
+export interface DeliveryRunOrderSummary {
+  id: string;
+  checkoutGroupId: string;
+  status: OrderStatus;
+  fulfillmentType: FulfillmentType;
+  farmerName: string | null;
+  farmerAddress: string | null;
+  restaurantName: string | null;
+  deliveryAddress: string | null;
+  estimatedTotalAmount: number;
+  totalEstimatedWeightKg: number;
+}
+
+export interface DeliveryRun {
+  id: string;
+  driverName: string;
+  driverPhone: string;
+  vehicleNote: string | null;
+  runDate: string;
+  status: DeliveryRunStatus;
+  createdAt: string;
+  orders: DeliveryRunOrderSummary[];
+}
+

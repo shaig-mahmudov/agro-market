@@ -84,6 +84,7 @@ public static class ListOrders
         ClaimsPrincipal principal,
         AppDbContext db,
         OrderStatus? status = null,
+        bool? unassignedOnly = null,
         int? page = null,
         int? pageSize = null,
         CancellationToken cancellationToken = default)
@@ -97,6 +98,7 @@ public static class ListOrders
         query = role switch
         {
             UserRole.Admin => query,
+            UserRole.Driver => query,
             UserRole.Farmer => query.Where(o => o.FarmerId == userId),
             UserRole.Restaurant => query.Where(o => o.RestaurantId == userId),
             _ => query.Where(_ => false)
@@ -105,6 +107,11 @@ public static class ListOrders
         if (status.HasValue)
         {
             query = query.Where(o => o.Status == status.Value);
+        }
+
+        if (unassignedOnly == true)
+        {
+            query = query.Where(o => o.DeliveryRunId == null);
         }
 
         var totalCount = await query.CountAsync(cancellationToken);

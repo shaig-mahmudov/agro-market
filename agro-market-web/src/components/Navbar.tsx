@@ -48,6 +48,11 @@ export function Navbar() {
                 Farmer Hub
               </Link>
             )}
+            {(user?.role === "Admin" || user?.role === "Driver") && (
+              <Link href="/logistics" className={navLinkClass("/logistics")}>
+                Milk-Run Dispatch
+              </Link>
+            )}
             {user?.role === "Admin" && (
               <Link href="/admin" className={navLinkClass("/admin")}>
                 Admin Verify
@@ -121,6 +126,11 @@ export function Navbar() {
         {(user?.role === "Farmer" || user?.role === "Admin") && (
           <Link href="/farmer" className={navLinkClass("/farmer")}>
             Farmer Hub
+          </Link>
+        )}
+        {(user?.role === "Admin" || user?.role === "Driver") && (
+          <Link href="/logistics" className={navLinkClass("/logistics")}>
+            Logistics
           </Link>
         )}
         {user?.role === "Admin" && (

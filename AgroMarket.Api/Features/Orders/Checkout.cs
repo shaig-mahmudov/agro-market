@@ -3,6 +3,7 @@ using AgroMarket.Api.Common;
 using AgroMarket.Api.Database;
 using AgroMarket.Api.Database.Entities;
 using AgroMarket.Api.Features.Products;
+using AgroMarket.Api.Infrastructure.Notifications;
 using FluentValidation;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
@@ -48,10 +49,11 @@ public static class Checkout
         ClaimsPrincipal principal,
         AppDbContext db,
         IOptions<MarketplaceOptions> options,
+        ITelegramNotifier telegramNotifier,
         CancellationToken cancellationToken)
     {
         var userId = principal.GetUserId();
-        return await ExecuteCheckoutAsync(userId, request, db, options.Value, cancellationToken);
+        return await ExecuteCheckoutAsync(userId, request, db, options.Value, cancellationToken, telegramNotifier);
     }
 
     public static async Task<Results<Created<CheckoutGroupDto>, ProblemHttpResult>> ExecuteCheckoutAsync(
@@ -59,7 +61,8 @@ public static class Checkout
         Request request,
         AppDbContext db,
         MarketplaceOptions opts,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ITelegramNotifier? telegramNotifier = null)
     {
         var restaurant = await db.Users
             .AsNoTracking()
@@ -265,6 +268,18 @@ public static class Checkout
             if (farmerById.TryGetValue(order.FarmerId, out var farmer))
             {
                 order.Farmer = farmer;
+            }
+        }
+
+        if (telegramNotifier is not null)
+        {
+            var restaurantName = restaurant.BusinessProfile?.BusinessName ?? restaurant.PhoneNumber;
+            foreach (var order in checkoutGroup.Orders)
+            {
+                if (order.Farmer?.TelegramChatId is { } chatId)
+                {
+                    await telegramNotifier.NotifyFarmerNewOrderAsync(order, chatId, restaurantName, cancellationToken);
+                }
             }
         }
 

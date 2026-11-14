@@ -1,0 +1,354 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { ApiError, logisticsApi, ordersApi } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import type { DeliveryRun, DeliveryRunStatus, Order } from "@/lib/types";
+
+const NEXT_RUN_STATUS: Record<DeliveryRunStatus, DeliveryRunStatus | null> = {
+  Planned: "PickingUp",
+  PickingUp: "InTransit",
+  InTransit: "Completed",
+  Completed: null,
+};
+
+const NEXT_STATUS_LABEL: Record<DeliveryRunStatus, string> = {
+  Planned: "Start Farm Pickups (PickingUp)",
+  PickingUp: "Depart for Buyers (InTransit)",
+  InTransit: "Complete Milk-Run",
+  Completed: "Completed",
+};
+
+export default function LogisticsPage() {
+  const { user } = useAuth();
+  const [runs, setRuns] = useState<DeliveryRun[]>([]);
+  const [unassignedOrders, setUnassignedOrders] = useState<Order[]>([]);
+  const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
+  const [driverName, setDriverName] = useState("");
+  const [driverPhone, setDriverPhone] = useState("+99450");
+  const [vehicleNote, setVehicleNote] = useState("");
+  const [runDate, setRunDate] = useState(() => {
+    const tomorrow = new Date(Date.now() + 86_400_000);
+    return tomorrow.toISOString().slice(0, 10);
+  });
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [updatingRunId, setUpdatingRunId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const canAccess = user?.role === "Admin" || user?.role === "Driver";
+
+  const reload = useCallback(async () => {
+    if (!canAccess) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const [runsRes, ordersRes] = await Promise.all([
+        logisticsApi.listRuns({ pageSize: 25 }),
+        ordersApi.listOrders({ status: "Confirmed", unassignedOnly: true, pageSize: 50 }),
+      ]);
+      setRuns(runsRes.items);
+      setUnassignedOrders(ordersRes.items);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to load logistics data.");
+    } finally {
+      setLoading(false);
+    }
+  }, [canAccess]);
+
+  useEffect(() => {
+    if (!canAccess) return;
+    let active = true;
+    Promise.all([
+      logisticsApi.listRuns({ pageSize: 25 }),
+      ordersApi.listOrders({ status: "Confirmed", unassignedOnly: true, pageSize: 50 }),
+    ])
+      .then(([runsRes, ordersRes]) => {
+        if (!active) return;
+        setRuns(runsRes.items);
+        setUnassignedOrders(ordersRes.items);
+      })
+      .catch((err) => {
+        if (active) {
+          setError(err instanceof ApiError ? err.message : "Failed to load logistics data.");
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [canAccess]);
+
+  if (!user) {
+    return (
+      <div className="mx-auto max-w-lg rounded-2xl border border-[#DCE6DF] bg-white p-6 text-center">
+        <p className="font-semibold">Sign in to access Milk-Run Dispatch.</p>
+        <Link
+          href="/login"
+          className="mt-4 inline-block rounded-xl bg-[#1B4332] px-4 py-2 text-sm font-semibold text-white"
+        >
+          Sign in with OTP
+        </Link>
+      </div>
+    );
+  }
+
+  if (!canAccess) {
+    return (
+      <div className="mx-auto max-w-lg rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center text-sm text-amber-900">
+        Milk-Run Logistics is restricted to Admin dispatchers and Drivers.
+      </div>
+    );
+  }
+
+  function toggleOrderSelection(orderId: string) {
+    setSelectedOrderIds((prev) =>
+      prev.includes(orderId) ? prev.filter((id) => id !== orderId) : [...prev, orderId]
+    );
+  }
+
+  async function handleCreateRun(e: React.FormEvent) {
+    e.preventDefault();
+    if (selectedOrderIds.length === 0) {
+      setError("Select at least one Confirmed order to create a delivery run.");
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      await logisticsApi.createRun({
+        driverName,
+        driverPhone,
+        vehicleNote: vehicleNote || undefined,
+        runDate: runDate || undefined,
+        orderIds: selectedOrderIds,
+      });
+      setDriverName("");
+      setVehicleNote("");
+      setSelectedOrderIds([]);
+      await reload();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to create delivery run.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleAdvanceStatus(run: DeliveryRun) {
+    const nextStatus = NEXT_RUN_STATUS[run.status];
+    if (!nextStatus) return;
+
+    setUpdatingRunId(run.id);
+    setError(null);
+    try {
+      await logisticsApi.updateRunStatus(run.id, nextStatus);
+      await reload();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to update run status.");
+    } finally {
+      setUpdatingRunId(null);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-[#1B4332]">Morning Milk-Run Dispatch</h1>
+          <p className="text-sm text-stone-500">
+            Batch farmer-confirmed orders into refrigerated morning runs and update pickup/transit status.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void reload()}
+          className="rounded-xl border border-[#D4DFD7] bg-white px-4 py-2 text-sm font-semibold text-[#1B4332]"
+        >
+          Refresh
+        </button>
+      </div>
+
+      {error && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          {error}
+        </div>
+      )}
+
+      {user.role === "Admin" && (
+        <section className="rounded-2xl border border-[#DCE6DF] bg-white p-5 shadow-xs">
+          <h2 className="text-lg font-bold text-[#1B4332]">
+            1. Batch Confirmed Orders Into a Delivery Run
+          </h2>
+
+          {loading ? (
+            <p className="mt-3 text-sm text-stone-500">Loading confirmed orders...</p>
+          ) : unassignedOrders.length === 0 ? (
+            <p className="mt-3 rounded-xl bg-[#F4F7F5] p-4 text-sm text-stone-600">
+              No unassigned Confirmed orders waiting for dispatch right now.
+            </p>
+          ) : (
+            <form onSubmit={(e) => void handleCreateRun(e)} className="mt-4 space-y-4">
+              <div className="grid gap-3 md:grid-cols-2">
+                {unassignedOrders.map((order) => {
+                  const checked = selectedOrderIds.includes(order.id);
+                  return (
+                    <label
+                      key={order.id}
+                      className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 text-sm transition-colors ${
+                        checked
+                          ? "border-[#1B4332] bg-[#E9F5EE]/50"
+                          : "border-[#E2E8E4] bg-[#FAF9F6]"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleOrderSelection(order.id)}
+                        className="mt-1 h-4 w-4 accent-[#1B4332]"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-[#1F2933]">
+                          {order.farmerName ?? "Farmer"} → {order.restaurantName ?? "Restaurant"}
+                        </p>
+                        <p className="text-xs text-stone-500">
+                          Order #{order.id.slice(0, 8)} •{" "}
+                          {order.items.reduce((s, i) => s + i.estimatedWeightKg, 0)} kg • $
+                          {order.finalTotalAmount.toFixed(2)} ({order.fulfillmentType})
+                        </p>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-4">
+                <input
+                  type="text"
+                  required
+                  placeholder="Driver Full Name"
+                  value={driverName}
+                  onChange={(e) => setDriverName(e.target.value)}
+                  className="rounded-xl border border-[#D4DFD7] px-3 py-2 text-sm"
+                />
+                <input
+                  type="text"
+                  required
+                  placeholder="Driver Phone (+99450...)"
+                  value={driverPhone}
+                  onChange={(e) => setDriverPhone(e.target.value)}
+                  className="rounded-xl border border-[#D4DFD7] px-3 py-2 text-sm"
+                />
+                <input
+                  type="date"
+                  value={runDate}
+                  onChange={(e) => setRunDate(e.target.value)}
+                  className="rounded-xl border border-[#D4DFD7] px-3 py-2 text-sm"
+                />
+                <input
+                  type="text"
+                  placeholder="Vehicle / Route Note"
+                  value={vehicleNote}
+                  onChange={(e) => setVehicleNote(e.target.value)}
+                  className="rounded-xl border border-[#D4DFD7] px-3 py-2 text-sm"
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-stone-500">
+                  Selected: {selectedOrderIds.length} confirmed order(s)
+                </span>
+                <button
+                  type="submit"
+                  disabled={submitting || selectedOrderIds.length === 0}
+                  className="rounded-xl bg-[#1B4332] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2D6A4F] disabled:opacity-50"
+                >
+                  {submitting ? "Dispatching..." : "Create Morning Milk-Run"}
+                </button>
+              </div>
+            </form>
+          )}
+        </section>
+      )}
+
+      <section className="space-y-4">
+        <h2 className="text-lg font-bold text-[#1B4332]">2. Active & Scheduled Delivery Runs</h2>
+        {loading ? (
+          <div className="rounded-2xl border border-[#E2E8E4] bg-white p-6 text-center text-sm text-stone-500">
+            Loading delivery runs...
+          </div>
+        ) : runs.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-[#C7D3CC] bg-white p-6 text-center text-sm text-stone-500">
+            No delivery runs scheduled yet.
+          </div>
+        ) : (
+          runs.map((run) => {
+            const nextStatus = NEXT_RUN_STATUS[run.status];
+            return (
+              <div
+                key={run.id}
+                className="rounded-2xl border border-[#DCE6DF] bg-white p-5 shadow-xs"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#F0F3F1] pb-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-[#1B4332]">
+                        Run {run.runDate} • {run.driverName}
+                      </span>
+                      <span className="rounded-full bg-[#E9F5EE] px-2.5 py-0.5 text-xs font-semibold text-[#1B4332]">
+                        {run.status}
+                      </span>
+                    </div>
+                    <p className="text-xs text-stone-500">
+                      Phone: {run.driverPhone}
+                      {run.vehicleNote ? ` • ${run.vehicleNote}` : ""}
+                    </p>
+                  </div>
+                  {nextStatus && (
+                    <button
+                      type="button"
+                      disabled={updatingRunId === run.id}
+                      onClick={() => void handleAdvanceStatus(run)}
+                      className="rounded-xl bg-[#2D6A4F] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#1B4332] disabled:opacity-50"
+                    >
+                      {updatingRunId === run.id ? "Updating..." : NEXT_STATUS_LABEL[run.status]}
+                    </button>
+                  )}
+                </div>
+
+                <div className="mt-3 divide-y divide-[#F0F3F1] text-sm">
+                  {run.orders.map((order) => (
+                    <div
+                      key={order.id}
+                      className="flex flex-wrap items-center justify-between gap-2 py-2"
+                    >
+                      <div>
+                        <p className="font-semibold text-[#1F2933]">
+                          Pickup: {order.farmerName ?? "Farmer"}
+                          {order.farmerAddress ? ` (${order.farmerAddress})` : ""} → Dropoff:{" "}
+                          {order.restaurantName ?? "Restaurant"}
+                          {order.deliveryAddress ? ` (${order.deliveryAddress})` : ""}
+                        </p>
+                        <p className="text-xs text-stone-500">
+                          Order #{order.id.slice(0, 8)} • {order.totalEstimatedWeightKg} kg • $
+                          {order.estimatedTotalAmount.toFixed(2)}
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-medium text-stone-700">
+                        {order.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </section>
+    </div>
+  );
+}

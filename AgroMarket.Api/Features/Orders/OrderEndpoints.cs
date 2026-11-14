@@ -37,6 +37,18 @@ public static class OrderEndpoints
             .WithName("GetOrderById")
             .WithSummary("Get details for a single order");
 
+        group.MapPatch("/{id:guid}/respond", FarmerRespond.Handle)
+            .RequireAuthorization(AuthorizationPolicies.VerifiedUser)
+            .WithValidation<FarmerRespond.Request>()
+            .WithName("FarmerRespondToOrder")
+            .WithSummary("Accept or reject a pending farmer order (restores stock on reject)");
+
+        api.MapPost("/webhooks/telegram", TelegramWebhook.Handle)
+            .WithTags("Webhooks")
+            .AllowAnonymous()
+            .WithName("TelegramWebhook")
+            .WithSummary("Handle Telegram bot updates (/start deep-link and order inline callbacks)");
+
         return api;
     }
 }

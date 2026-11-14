@@ -2,8 +2,11 @@ import type {
   AdminUserItem,
   AuthResponse,
   CheckoutGroup,
+  DeliveryRun,
+  DeliveryRunStatus,
   FulfillmentType,
   Order,
+  OrderStatus,
   PagedResult,
   PaymentMethod,
   PresignedUploadResult,
@@ -294,6 +297,54 @@ export const ordersApi = {
       auth: true,
     }),
 
-  listOrders: () =>
-    apiFetch<PagedResult<Order>>("/api/orders", { auth: true }),
+  listOrders: (params?: { status?: OrderStatus; unassignedOnly?: boolean; pageSize?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.unassignedOnly) qs.set("unassignedOnly", "true");
+    if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return apiFetch<PagedResult<Order>>(`/api/orders${suffix}`, { auth: true });
+  },
+
+  respond: (id: string, accept: boolean) =>
+    apiFetch<Order>(`/api/orders/${id}/respond`, {
+      method: "PATCH",
+      auth: true,
+      body: JSON.stringify({ accept }),
+    }),
+};
+
+export const logisticsApi = {
+  listRuns: (params?: { status?: DeliveryRunStatus; pageSize?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return apiFetch<PagedResult<DeliveryRun>>(`/api/logistics/runs${suffix}`, {
+      auth: true,
+    });
+  },
+
+  getRun: (id: string) =>
+    apiFetch<DeliveryRun>(`/api/logistics/runs/${id}`, { auth: true }),
+
+  createRun: (payload: {
+    driverName: string;
+    driverPhone: string;
+    vehicleNote?: string;
+    runDate?: string;
+    orderIds: string[];
+  }) =>
+    apiFetch<DeliveryRun>("/api/logistics/runs", {
+      method: "POST",
+      auth: true,
+      body: JSON.stringify(payload),
+    }),
+
+  updateRunStatus: (id: string, status: DeliveryRunStatus) =>
+    apiFetch<DeliveryRun>(`/api/logistics/runs/${id}/status`, {
+      method: "PATCH",
+      auth: true,
+      body: JSON.stringify({ status }),
+    }),
 };

@@ -20,6 +20,7 @@ public sealed class TelegramOptions
     public string BotToken { get; set; } = string.Empty;
     public string BotUsername { get; set; } = "AgroMarketBot";
     public string GatewayApiToken { get; set; } = string.Empty;
+    public string WebhookSecret { get; set; } = string.Empty;
 }
 
 public interface IOtpSender

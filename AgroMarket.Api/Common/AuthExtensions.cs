@@ -8,6 +8,7 @@ namespace AgroMarket.Api.Common;
 public static class AuthorizationPolicies
 {
     public const string Admin = "RequireAdmin";
+    public const string AdminOrDriver = "RequireAdminOrDriver";
     public const string VerifiedUser = "RequireVerifiedUser";
     public const string VerifiedFarmer = "RequireVerifiedFarmer";
     public const string VerifiedRestaurant = "RequireVerifiedRestaurant";

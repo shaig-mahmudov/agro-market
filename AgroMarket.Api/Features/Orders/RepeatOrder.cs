@@ -2,6 +2,7 @@ using System.Security.Claims;
 using AgroMarket.Api.Common;
 using AgroMarket.Api.Database;
 using AgroMarket.Api.Database.Entities;
+using AgroMarket.Api.Infrastructure.Notifications;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -21,6 +22,7 @@ public static class RepeatOrder
         ClaimsPrincipal principal,
         AppDbContext db,
         IOptions<MarketplaceOptions> options,
+        ITelegramNotifier telegramNotifier,
         CancellationToken cancellationToken)
     {
         var userId = principal.GetUserId();
@@ -73,6 +75,7 @@ public static class RepeatOrder
             checkoutRequest,
             db,
             options.Value,
-            cancellationToken);
+            cancellationToken,
+            telegramNotifier);
     }
 }

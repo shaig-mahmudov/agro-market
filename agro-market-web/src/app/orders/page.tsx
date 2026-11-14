@@ -13,6 +13,7 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [repeatingId, setRepeatingId] = useState<string | null>(null);
+  const [respondingId, setRespondingId] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     if (!user) return;
@@ -87,6 +88,25 @@ export default function OrdersPage() {
     }
   }
 
+  async function handleRespond(orderId: string, accept: boolean) {
+    setRespondingId(orderId);
+    setError(null);
+    try {
+      await ordersApi.respond(orderId, accept);
+      await reload();
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : accept
+            ? "Could not confirm order."
+            : "Could not reject order."
+      );
+    } finally {
+      setRespondingId(null);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -157,6 +177,26 @@ export default function OrdersPage() {
                     </div>
                   ))}
                 </div>
+                {order.status === "Pending" && (
+                  <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-[#F0F3F1] pt-3">
+                    <button
+                      type="button"
+                      disabled={respondingId === order.id}
+                      onClick={() => void handleRespond(order.id, false)}
+                      className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-2 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
+                    >
+                      {respondingId === order.id ? "Updating..." : "Reject & Restore Stock"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={respondingId === order.id}
+                      onClick={() => void handleRespond(order.id, true)}
+                      className="rounded-xl bg-[#1B4332] px-4 py-2 text-xs font-semibold text-white hover:bg-[#2D6A4F] disabled:opacity-50"
+                    >
+                      {respondingId === order.id ? "Updating..." : "Accept Order"}
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
