@@ -70,7 +70,7 @@ async function parseError(res: Response): Promise<ApiError> {
   }
 }
 
-async function tryRefreshTokens(): Promise<string | null> {
+export async function tryRefreshTokens(): Promise<string | null> {
   const { refreshToken } = getStoredTokens();
   if (!refreshToken) return null;
 
@@ -127,6 +127,23 @@ export async function apiFetch<T>(
   }
 
   return (await res.json()) as T;
+}
+
+export async function uploadFileWithPresignedUrl(
+  presign: PresignedUploadResult,
+  file: File
+): Promise<string> {
+  if (!presign.isLocalStub) {
+    const putRes = await fetch(presign.uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": file.type },
+      body: file,
+    });
+    if (!putRes.ok) {
+      throw new ApiError(`Photo upload failed with status ${putRes.status}`, putRes.status);
+    }
+  }
+  return presign.publicUrl;
 }
 
 export const authApi = {

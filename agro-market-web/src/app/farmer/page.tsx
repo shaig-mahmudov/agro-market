@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ApiError, productsApi } from "@/lib/api";
+import { ApiError, productsApi, uploadFileWithPresignedUrl } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { Product } from "@/lib/types";
 
@@ -24,6 +24,8 @@ export default function FarmerHubPage() {
   const [grade, setGrade] = useState("A");
   const [packaging, setPackaging] = useState("10kg crate");
   const [isOrganic, setIsOrganic] = useState(false);
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [creating, setCreating] = useState(false);
 
   const loadMine = useCallback(async () => {
@@ -99,11 +101,13 @@ export default function FarmerHubPage() {
           packaging: packaging || null,
           isOrganic,
         },
+        imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
         priceTiers,
       });
 
       setTitle("");
       setDescription("");
+      setImageUrls([]);
       await loadMine();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to publish listing.");
@@ -142,6 +146,21 @@ export default function FarmerHubPage() {
       await loadMine();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to delete listing.");
+    }
+  }
+
+  async function handlePhotoUpload(file: File | null) {
+    if (!file) return;
+    setUploadingPhoto(true);
+    setError(null);
+    try {
+      const presign = await productsApi.createUploadUrl(file.name, file.type || "image/webp");
+      const publicUrl = await uploadFileWithPresignedUrl(presign, file);
+      setImageUrls((prev) => [...prev, publicUrl]);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to upload produce photo.");
+    } finally {
+      setUploadingPhoto(false);
     }
   }
 
@@ -297,6 +316,27 @@ export default function FarmerHubPage() {
               />
               <span>Certified / Organic produce</span>
             </label>
+
+            <div>
+              <label className="block text-xs font-semibold text-stone-700">
+                Produce Photos (WebP / JPEG / PNG)
+              </label>
+              <input
+                type="file"
+                accept="image/webp,image/jpeg,image/png"
+                disabled={uploadingPhoto || !user.isVerified}
+                onChange={(e) => void handlePhotoUpload(e.target.files?.[0] ?? null)}
+                className="mt-1 w-full rounded-xl border border-[#D4DFD7] px-3 py-1.5 text-xs"
+              />
+              {uploadingPhoto && (
+                <p className="mt-1 text-xs text-stone-500">Uploading photo to R2...</p>
+              )}
+              {imageUrls.length > 0 && (
+                <p className="mt-1 text-xs font-medium text-[#2D6A4F]">
+                  Attached {imageUrls.length} photo(s)
+                </p>
+              )}
+            </div>
 
             <button
               type="submit"

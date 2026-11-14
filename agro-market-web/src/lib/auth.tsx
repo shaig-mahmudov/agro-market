@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { authApi, getStoredTokens, setStoredTokens } from "./api";
+import { authApi, getStoredTokens, setStoredTokens, tryRefreshTokens } from "./api";
 import type { AuthResponse, UserSummary } from "./types";
 
 interface AuthContextValue {
@@ -31,6 +31,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refreshUser = useCallback(async () => {
+    await tryRefreshTokens();
     const me = await fetchCurrentUser();
     setUser(me);
     setLoading(false);

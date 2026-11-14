@@ -38,9 +38,15 @@ public static class TelegramWebhook
         JwtTokenService tokenService,
         ITelegramNotifier notifier,
         IOptions<TelegramOptions> telegramOptions,
+        IHostEnvironment environment,
         CancellationToken cancellationToken)
     {
         var configuredSecret = telegramOptions.Value.WebhookSecret;
+        if (environment.IsProduction() && string.IsNullOrWhiteSpace(configuredSecret))
+        {
+            return TypedResults.Unauthorized();
+        }
+
         if (!string.IsNullOrWhiteSpace(configuredSecret))
         {
             var headerSecret = httpRequest.Headers["X-Telegram-Bot-Api-Secret-Token"].FirstOrDefault();

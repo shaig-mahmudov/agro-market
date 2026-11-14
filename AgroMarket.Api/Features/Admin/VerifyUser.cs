@@ -112,6 +112,19 @@ public static class VerifyUser
             user.Role = request.Role.Value;
         }
 
+        if (!request.IsVerified)
+        {
+            var now = DateTimeOffset.UtcNow;
+            var activeTokens = await db.RefreshTokens
+                .Where(rt => rt.UserId == user.Id && rt.RevokedAt == null && rt.ExpiresAt > now)
+                .ToListAsync(cancellationToken);
+
+            foreach (var token in activeTokens)
+            {
+                token.RevokedAt = now;
+            }
+        }
+
         await db.SaveChangesAsync(cancellationToken);
 
         return TypedResults.Ok(new AdminUserItem(

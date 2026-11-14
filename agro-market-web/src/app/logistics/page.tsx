@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ApiError, logisticsApi, ordersApi } from "@/lib/api";
+import {
+  ApiError,
+  logisticsApi,
+  ordersApi,
+  uploadFileWithPresignedUrl,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type {
   DeliveryRun,
@@ -216,6 +221,22 @@ export default function LogisticsPage() {
       setError(err instanceof ApiError ? err.message : "Failed to reconcile delivery weights.");
     } finally {
       setSavingReconcile(false);
+    }
+  }
+
+  async function handleUploadProofPhoto(orderId: string, idx: number, file: File | null) {
+    if (!file) return;
+    setError(null);
+    try {
+      const presign = await ordersApi.createProofUploadUrl(
+        orderId,
+        file.name,
+        file.type || "image/webp"
+      );
+      const publicUrl = await uploadFileWithPresignedUrl(presign, file);
+      updateDraftField(orderId, idx, "proofUrl", publicUrl);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to upload scale proof photo.");
     }
   }
 
@@ -482,10 +503,22 @@ export default function LogisticsPage() {
                                     />
                                   </label>
                                   <label className="block">
-                                    <span className="text-stone-600">Scale Photo URL (optional)</span>
+                                    <span className="text-stone-600">Scale Photo (Upload / URL)</span>
+                                    <input
+                                      type="file"
+                                      accept="image/webp,image/jpeg,image/png"
+                                      onChange={(e) =>
+                                        void handleUploadProofPhoto(
+                                          order.id,
+                                          idx,
+                                          e.target.files?.[0] ?? null
+                                        )
+                                      }
+                                      className="mt-1 w-full rounded-lg border border-[#D4DFD7] px-2 py-1 text-[11px]"
+                                    />
                                     <input
                                       type="url"
-                                      placeholder="https://..."
+                                      placeholder="or paste https://..."
                                       value={drafts[idx].proofUrl}
                                       onChange={(e) =>
                                         updateDraftField(order.id, idx, "proofUrl", e.target.value)

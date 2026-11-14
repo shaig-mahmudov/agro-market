@@ -247,6 +247,7 @@ export default function OrdersPage() {
         <div className="space-y-5">
           {groups.map((group) => {
             const grandTotal = group.orders
+              .filter((o) => o.status !== "Cancelled")
               .reduce((acc, o) => acc + o.finalTotalAmount, 0)
               .toFixed(2);
 
