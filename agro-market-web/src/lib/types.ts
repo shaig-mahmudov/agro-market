@@ -112,3 +112,63 @@ export interface PresignedUploadResult {
   expiresAt: string;
   isLocalStub: boolean;
 }
+
+export type FulfillmentType = "PlatformCourier" | "FarmerDelivery" | "BuyerPickup";
+export type PaymentMethod = "CashOnDelivery" | "BankTransfer" | "WeeklyInvoice";
+export type PaymentStatus = "Unpaid" | "Paid" | "Disputed";
+export type OrderStatus =
+  | "Pending"
+  | "Confirmed"
+  | "PickedUp"
+  | "InTransit"
+  | "DeliveredPendingApproval"
+  | "Delivered"
+  | "Disputed"
+  | "Cancelled";
+
+export interface OrderItem {
+  id: string;
+  productId: string;
+  productTitleSnapshot: string;
+  unitPriceApplied: number;
+  estimatedWeightKg: number;
+  actualDeliveredWeightKg: number | null;
+  rejectedWeightKg: number | null;
+  proofPhotoUrl: string | null;
+}
+
+export interface Order {
+  id: string;
+  checkoutGroupId: string;
+  restaurantId: string;
+  farmerId: string;
+  farmerName: string | null;
+  restaurantName: string | null;
+  deliveryRunId: string | null;
+  fulfillmentType: FulfillmentType;
+  status: OrderStatus;
+  estimatedTotalAmount: number;
+  platformFeeAmount: number;
+  deliveryFeeAmount: number;
+  finalTotalAmount: number;
+  paymentMethod: PaymentMethod;
+  paymentStatus: PaymentStatus;
+  expiresAt: string;
+  confirmedAt: string | null;
+  deliveredAt: string | null;
+  cancelledAt: string | null;
+  createdAt: string;
+  items: OrderItem[];
+}
+
+export interface CheckoutGroup {
+  id: string;
+  restaurantId: string;
+  deliveryAddress: string;
+  scheduledDeliveryDate: string;
+  cutoffAt: string;
+  totalDeliveryFee: number;
+  createdAt: string;
+  orders: Order[];
+}
+

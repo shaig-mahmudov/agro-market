@@ -38,6 +38,11 @@ export function Navbar() {
             <Link href="/" className={navLinkClass("/")}>
               Produce Catalog
             </Link>
+            {user && (
+              <Link href="/orders" className={navLinkClass("/orders")}>
+                Orders
+              </Link>
+            )}
             {(user?.role === "Farmer" || user?.role === "Admin") && (
               <Link href="/farmer" className={navLinkClass("/farmer")}>
                 Farmer Hub
@@ -108,6 +113,11 @@ export function Navbar() {
         <Link href="/" className={navLinkClass("/")}>
           Catalog
         </Link>
+        {user && (
+          <Link href="/orders" className={navLinkClass("/orders")}>
+            Orders
+          </Link>
+        )}
         {(user?.role === "Farmer" || user?.role === "Admin") && (
           <Link href="/farmer" className={navLinkClass("/farmer")}>
             Farmer Hub

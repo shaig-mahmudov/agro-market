@@ -5,6 +5,7 @@ using AgroMarket.Api.Database;
 using AgroMarket.Api.Database.Entities;
 using AgroMarket.Api.Features.Admin;
 using AgroMarket.Api.Features.Auth;
+using AgroMarket.Api.Features.Orders;
 using AgroMarket.Api.Features.Products;
 using AgroMarket.Api.Features.Profiles;
 using AgroMarket.Api.Infrastructure.Auth;
@@ -58,7 +59,9 @@ builder.Services.Configure<AuthBootstrapOptions>(builder.Configuration.GetSectio
 builder.Services.Configure<OtpOptions>(builder.Configuration.GetSection(OtpOptions.SectionName));
 builder.Services.Configure<TelegramOptions>(builder.Configuration.GetSection(TelegramOptions.SectionName));
 builder.Services.Configure<R2Options>(builder.Configuration.GetSection(R2Options.SectionName));
+builder.Services.Configure<MarketplaceOptions>(builder.Configuration.GetSection(MarketplaceOptions.SectionName));
 builder.Services.AddSingleton<IObjectStorageService, R2ObjectStorageService>();
+builder.Services.AddHostedService<OrderExpirationWorker>();
 
 var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
 if (string.IsNullOrWhiteSpace(jwtOptions.SigningKey) || jwtOptions.SigningKey.Length < 32)
@@ -143,6 +146,7 @@ api.MapAuthEndpoints();
 api.MapAdminEndpoints();
 api.MapProfileEndpoints();
 api.MapProductEndpoints();
+api.MapOrderEndpoints();
 
 app.Run();
 

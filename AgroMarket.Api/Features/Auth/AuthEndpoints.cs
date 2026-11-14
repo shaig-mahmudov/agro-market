@@ -16,7 +16,6 @@ public static class AuthEndpoints
             .WithSummary("Send a 6-digit login/registration OTP to a phone number");
 
         group.MapPost("/verify-otp", VerifyOtp.Handle)
-            .RequireRateLimiting(RateLimitPolicies.OtpSend)
             .WithValidation<VerifyOtp.Request>()
             .WithName("VerifyOtp")
             .WithSummary("Verify OTP code and issue JWT access + refresh tokens");

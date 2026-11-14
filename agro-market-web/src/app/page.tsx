@@ -2,14 +2,16 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { productsApi, ApiError } from "@/lib/api";
+import { useRouter } from "next/navigation";
+import { ordersApi, productsApi, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { computeEffectiveUnitPrice, useCart } from "@/lib/cart";
-import type { Product } from "@/lib/types";
+import type { PaymentMethod, Product } from "@/lib/types";
 
 const CATEGORIES = ["", "Tomatoes", "Cucumbers", "Potatoes", "Greens", "Fruits", "Onions"];
 
 export default function CatalogPage() {
+  const router = useRouter();
   const { user } = useAuth();
   const { items, farmerGroups, totalKg, subtotal, addItem, updateQuantity, removeItem, clearCart } =
     useCart();
@@ -24,6 +26,32 @@ export default function CatalogPage() {
   const [isOrganic, setIsOrganic] = useState(false);
 
   const [qtyInputs, setQtyInputs] = useState<Record<string, number>>({});
+  const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CashOnDelivery");
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [checkingOut, setCheckingOut] = useState(false);
+
+  async function handleCheckout() {
+    if (!user) {
+      router.push("/login");
+      return;
+    }
+    setCheckingOut(true);
+    setCheckoutError(null);
+    try {
+      await ordersApi.checkout({
+        items: items.map((i) => ({ productId: i.product.id, weightKg: i.quantityKg })),
+        deliveryAddress: deliveryAddress.trim() || undefined,
+        paymentMethod,
+      });
+      clearCart();
+      router.push("/orders");
+    } catch (err) {
+      setCheckoutError(err instanceof ApiError ? err.message : "Checkout failed.");
+    } finally {
+      setCheckingOut(false);
+    }
+  }
 
   useEffect(() => {
     let active = true;
@@ -367,7 +395,7 @@ export default function CatalogPage() {
                 </div>
               ))}
 
-              <div className="space-y-2 border-t border-[#E2E8E4] pt-4 text-sm">
+              <div className="space-y-3 border-t border-[#E2E8E4] pt-4 text-sm">
                 <div className="flex justify-between text-stone-600">
                   <span>Total Weight</span>
                   <span className="font-semibold">{totalKg} kg</span>
@@ -376,10 +404,53 @@ export default function CatalogPage() {
                   <span>Estimated Produce Subtotal</span>
                   <span>${subtotal.toFixed(2)}</span>
                 </div>
-              </div>
 
-              <div className="rounded-xl bg-[#E9F5EE] p-3 text-xs text-[#1B4332]">
-                <strong>Checkout Ready Next (Task 6):</strong> Transactional multi-farmer checkout with cutoff enforcement, `xmin` stock locking, and 1-click repeat ordering will connect directly to this cart.
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700">
+                    Delivery Address (optional if saved in profile)
+                  </label>
+                  <input
+                    type="text"
+                    value={deliveryAddress}
+                    onChange={(e) => setDeliveryAddress(e.target.value)}
+                    placeholder="Use saved Business Profile address"
+                    className="mt-1 w-full rounded-xl border border-[#D4DFD7] px-3 py-2 text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700">
+                    Payment Method
+                  </label>
+                  <select
+                    value={paymentMethod}
+                    onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
+                    className="mt-1 w-full rounded-xl border border-[#D4DFD7] bg-white px-3 py-2 text-xs"
+                  >
+                    <option value="CashOnDelivery">Cash on Delivery (COD)</option>
+                    <option value="BankTransfer">Bank Transfer on Handover</option>
+                    <option value="WeeklyInvoice">Weekly Consolidated Invoice</option>
+                  </select>
+                </div>
+
+                {checkoutError && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 p-2.5 text-xs text-red-800">
+                    {checkoutError}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  disabled={checkingOut}
+                  onClick={() => void handleCheckout()}
+                  className="w-full rounded-xl bg-[#1B4332] py-2.5 text-sm font-semibold text-white hover:bg-[#2D6A4F] disabled:opacity-60"
+                >
+                  {checkingOut
+                    ? "Placing Consolidated Order..."
+                    : user
+                      ? "Place Consolidated Order"
+                      : "Sign in to Checkout"}
+                </button>
               </div>
             </div>
           )}

@@ -1,7 +1,11 @@
 import type {
   AdminUserItem,
   AuthResponse,
+  CheckoutGroup,
+  FulfillmentType,
+  Order,
   PagedResult,
+  PaymentMethod,
   PresignedUploadResult,
   Product,
   ProductMetadata,
@@ -263,4 +267,33 @@ export const productsApi = {
       method: "DELETE",
       auth: true,
     }),
+};
+
+export const ordersApi = {
+  checkout: (payload: {
+    items: { productId: string; weightKg: number }[];
+    deliveryAddress?: string;
+    paymentMethod?: PaymentMethod;
+    fulfillmentType?: FulfillmentType;
+  }) =>
+    apiFetch<CheckoutGroup>("/api/orders/checkout", {
+      method: "POST",
+      auth: true,
+      body: JSON.stringify(payload),
+    }),
+
+  repeatOrder: (checkoutGroupId: string) =>
+    apiFetch<CheckoutGroup>(`/api/orders/${checkoutGroupId}/repeat`, {
+      method: "POST",
+      auth: true,
+      body: JSON.stringify({}),
+    }),
+
+  listCheckoutGroups: () =>
+    apiFetch<PagedResult<CheckoutGroup>>("/api/orders/checkout-groups", {
+      auth: true,
+    }),
+
+  listOrders: () =>
+    apiFetch<PagedResult<Order>>("/api/orders", { auth: true }),
 };
