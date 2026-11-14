@@ -1,0 +1,104 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: agromarket-postgres-prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-agromarket}
+      POSTGRES_USER: ${POSTGRES_USER:-agromarket}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+    volumes:
+      - pgdata_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agromarket} -d ${POSTGRES_DB:-agromarket}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  migrator:
+    build:
+      context: .
+      dockerfile: AgroMarket.Api/Dockerfile
+      target: migrator
+    container_name: agromarket-migrator
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      - "--connection"
+      - "Host=postgres;Port=5432;Database=${POSTGRES_DB:-agromarket};Username=${POSTGRES_USER:-agromarket};Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}"
+
+  api:
+    build:
+      context: .
+      dockerfile: AgroMarket.Api/Dockerfile
+      target: runtime
+    container_name: agromarket-api-prod
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=${POSTGRES_DB:-agromarket};Username=${POSTGRES_USER:-agromarket};Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      Jwt__Issuer: ${Jwt__Issuer:-AgroMarket.Api}
+      Jwt__Audience: ${Jwt__Audience:-AgroMarket.Clients}
+      Jwt__SigningKey: ${Jwt__SigningKey:?Jwt__SigningKey must be set}
+      Otp__Provider: ${Otp__Provider:-Telegram}
+      Otp__ReturnCodeInResponse: "false"
+      Telegram__BotToken: ${Telegram__BotToken:-}
+      Telegram__BotUsername: ${Telegram__BotUsername:-AgroMarketBot}
+      Telegram__GatewayApiToken: ${Telegram__GatewayApiToken:-}
+      Telegram__WebhookSecret: ${Telegram__WebhookSecret:-}
+      Auth__BootstrapAdminPhones__0: ${ADMIN_PHONE:?ADMIN_PHONE must be set}
+      R2__AccountId: ${R2__AccountId:-}
+      R2__AccessKeyId: ${R2__AccessKeyId:-}
+      R2__SecretAccessKey: ${R2__SecretAccessKey:-}
+      R2__BucketName: ${R2__BucketName:-agromarket-media}
+      R2__PublicBaseUrl: ${R2__PublicBaseUrl:-}
+      Cors__AllowedOrigins__0: ${CORS_ORIGIN:-https://localhost}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: ./agro-market-web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+    container_name: agromarket-web-prod
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: agromarket-caddy
+    restart: unless-stopped
+    depends_on:
+      - api
+      - web
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:-localhost}
+      ACME_EMAIL: ${ACME_EMAIL:-ops@agromarket.local}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata_prod:
+  caddy_data:
+  caddy_config:

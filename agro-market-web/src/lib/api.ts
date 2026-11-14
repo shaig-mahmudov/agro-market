@@ -21,7 +21,9 @@ import type {
 } from "./types";
 
 const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "http://localhost:5095";
+  process.env.NEXT_PUBLIC_API_URL !== undefined
+    ? process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, "")
+    : "http://localhost:5095";
 
 const ACCESS_TOKEN_KEY = "agromarket_access_token";
 const REFRESH_TOKEN_KEY = "agromarket_refresh_token";
