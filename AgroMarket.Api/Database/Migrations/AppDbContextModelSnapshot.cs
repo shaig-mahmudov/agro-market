@@ -265,6 +265,41 @@ namespace AgroMarket.Api.Database.Migrations
                     b.ToTable("order_items", (string)null);
                 });
 
+            modelBuilder.Entity("AgroMarket.Api.Database.Entities.OtpChallenge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("CodeHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTimeOffset?>("ConsumedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PhoneNumber")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PhoneNumber", "CreatedAt");
+
+                    b.ToTable("otp_challenges", (string)null);
+                });
+
             modelBuilder.Entity("AgroMarket.Api.Database.Entities.PriceTier", b =>
                 {
                     b.Property<Guid>("Id")

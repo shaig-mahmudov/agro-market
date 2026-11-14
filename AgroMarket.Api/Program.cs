@@ -1,10 +1,23 @@
+using System.Text;
+using System.Text.Json.Serialization;
 using AgroMarket.Api.Common;
 using AgroMarket.Api.Database;
+using AgroMarket.Api.Database.Entities;
+using AgroMarket.Api.Features.Auth;
+using AgroMarket.Api.Infrastructure.Auth;
+using AgroMarket.Api.Infrastructure.Notifications;
 using FluentValidation;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
+});
 
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
@@ -22,10 +35,64 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<AppDbContext>("postgres");
 
+builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
+builder.Services.Configure<AuthBootstrapOptions>(builder.Configuration.GetSection(AuthBootstrapOptions.SectionName));
+builder.Services.Configure<OtpOptions>(builder.Configuration.GetSection(OtpOptions.SectionName));
+builder.Services.Configure<TelegramOptions>(builder.Configuration.GetSection(TelegramOptions.SectionName));
+
+var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
+if (string.IsNullOrWhiteSpace(jwtOptions.SigningKey) || jwtOptions.SigningKey.Length < 32)
+{
+    throw new InvalidOperationException("Jwt:SigningKey must be configured and at least 32 characters long.");
+}
+
+builder.Services.AddSingleton<JwtTokenService>();
+
+var otpProvider = builder.Configuration.GetValue<string>("Otp:Provider");
+if (string.Equals(otpProvider, "Telegram", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddHttpClient<IOtpSender, TelegramGatewayOtpSender>();
+}
+else
+{
+    builder.Services.AddScoped<IOtpSender, ConsoleOtpSender>();
+}
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwtOptions.Issuer,
+            ValidateAudience = true,
+            ValidAudience = jwtOptions.Audience,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.SigningKey)),
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromSeconds(30)
+        };
+    });
+
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy(AuthorizationPolicies.Admin, policy =>
+        policy.RequireRole(nameof(UserRole.Admin)))
+    .AddPolicy(AuthorizationPolicies.VerifiedUser, policy =>
+        policy.RequireClaim("is_verified", "true"))
+    .AddPolicy(AuthorizationPolicies.VerifiedFarmer, policy =>
+        policy.RequireRole(nameof(UserRole.Farmer))
+              .RequireClaim("is_verified", "true"))
+    .AddPolicy(AuthorizationPolicies.VerifiedRestaurant, policy =>
+        policy.RequireRole(nameof(UserRole.Restaurant))
+              .RequireClaim("is_verified", "true"));
+
 var app = builder.Build();
 
 app.UseExceptionHandler();
 app.UseRateLimiter();
+app.UseAuthentication();
+app.UseAuthorization();
 
 if (app.Environment.IsDevelopment())
 {
@@ -50,6 +117,8 @@ api.MapGet("/ping", () => TypedResults.Ok(new
 }))
 .WithName("Ping")
 .WithTags("System");
+
+api.MapAuthEndpoints();
 
 app.Run();
 

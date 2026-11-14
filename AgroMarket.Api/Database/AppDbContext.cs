@@ -7,6 +7,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 {
     public DbSet<User> Users => Set<User>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<OtpChallenge> OtpChallenges => Set<OtpChallenge>();
     public DbSet<BusinessProfile> BusinessProfiles => Set<BusinessProfile>();
     public DbSet<Product> Products => Set<Product>();
     public DbSet<PriceTier> PriceTiers => Set<PriceTier>();
