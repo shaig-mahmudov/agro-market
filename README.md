@@ -12,13 +12,18 @@ See [b2b_agri_marketplace_mvp_project_plan.md](./b2b_agri_marketplace_mvp_projec
 - **Storage & Notifications:** Cloudflare R2 (S3-compatible) + Telegram Bot / Phone OTP
 - **Infrastructure:** Docker & Docker Compose
 
-## Quick Start (Local)
+## Quick Start (Local with PostgreSQL in Docker)
 
 ```bash
-# Build & test API
-dotnet build AgroMarket.slnx
+# 1. Start PostgreSQL 17 in Docker (no local PostgreSQL install needed)
+docker compose up -d postgres
 
-# Start PostgreSQL + API via Docker Compose
+# 2. Apply EF Core migrations & run API locally
+dotnet tool restore
+dotnet ef database update --project AgroMarket.Api
+dotnet run --project AgroMarket.Api
+
+# Or run the full stack (PostgreSQL + API) in Docker Compose
 cp .env.example .env
 docker compose up --build
 ```
@@ -31,7 +36,7 @@ Once running locally in Development:
 ## Implementation Roadmap (Incremental Tasks)
 
 - [x] **Task 1:** Repository setup, `.NET 10` VSA solution scaffolding, shared `Common/` primitives, Scalar/OpenAPI, `docker-compose.yml`
-- [ ] **Task 2:** Core domain entities, EF Core `AppDbContext`, PostgreSQL configurations (`numeric`, `JSONB`, `xmin`), and initial migration
+- [x] **Task 2:** Core domain entities, EF Core `AppDbContext`, PostgreSQL configurations (`numeric`, `JSONB`, `xmin`), and initial migration
 - [ ] **Task 3:** Passwordless Phone OTP auth, JWT + Refresh Tokens & Telegram Bot deep-link
 - [ ] **Task 4:** Admin user verification, Business Profiles & Farmer Product Catalog (`PriceTiers`, `JSONB`, R2 presigned uploads)
 - [ ] **Task 5:** Next.js PWA shell, OTP login, Admin verification, Farmer listing & Restaurant catalog/cart UI

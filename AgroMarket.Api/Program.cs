@@ -1,5 +1,7 @@
 using AgroMarket.Api.Common;
+using AgroMarket.Api.Database;
 using FluentValidation;
+using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -9,7 +11,16 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddOpenApi();
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 builder.Services.AddAgroMarketRateLimiting();
-builder.Services.AddHealthChecks();
+
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? throw new InvalidOperationException("Connection string 'DefaultConnection' was not configured.");
+
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseNpgsql(connectionString, npgsql =>
+        npgsql.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName)));
+
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<AppDbContext>("postgres");
 
 var app = builder.Build();
 
