@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: agromarket-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-agromarket}
+      POSTGRES_USER: ${POSTGRES_USER:-agromarket}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agromarket_dev_password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agromarket} -d ${POSTGRES_DB:-agromarket}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: AgroMarket.Api/Dockerfile
+    container_name: agromarket-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=${POSTGRES_DB:-agromarket};Username=${POSTGRES_USER:-agromarket};Password=${POSTGRES_PASSWORD:-agromarket_dev_password}
+      Jwt__Issuer: ${Jwt__Issuer:-AgroMarket.Api}
+      Jwt__Audience: ${Jwt__Audience:-AgroMarket.Clients}
+      Jwt__SigningKey: ${Jwt__SigningKey:-CHANGE_ME_TO_A_SECURE_64_CHAR_RANDOM_SECRET_KEY_FOR_LOCAL_DEV_ONLY}
+    ports:
+      - "${API_PORT:-5000}:8080"
+
+volumes:
+  pgdata:
