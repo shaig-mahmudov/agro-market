@@ -3,9 +3,13 @@ using System.Text.Json.Serialization;
 using AgroMarket.Api.Common;
 using AgroMarket.Api.Database;
 using AgroMarket.Api.Database.Entities;
+using AgroMarket.Api.Features.Admin;
 using AgroMarket.Api.Features.Auth;
+using AgroMarket.Api.Features.Products;
+using AgroMarket.Api.Features.Profiles;
 using AgroMarket.Api.Infrastructure.Auth;
 using AgroMarket.Api.Infrastructure.Notifications;
+using AgroMarket.Api.Infrastructure.Storage;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -39,6 +43,8 @@ builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptio
 builder.Services.Configure<AuthBootstrapOptions>(builder.Configuration.GetSection(AuthBootstrapOptions.SectionName));
 builder.Services.Configure<OtpOptions>(builder.Configuration.GetSection(OtpOptions.SectionName));
 builder.Services.Configure<TelegramOptions>(builder.Configuration.GetSection(TelegramOptions.SectionName));
+builder.Services.Configure<R2Options>(builder.Configuration.GetSection(R2Options.SectionName));
+builder.Services.AddSingleton<IObjectStorageService, R2ObjectStorageService>();
 
 var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
 if (string.IsNullOrWhiteSpace(jwtOptions.SigningKey) || jwtOptions.SigningKey.Length < 32)
@@ -119,6 +125,9 @@ api.MapGet("/ping", () => TypedResults.Ok(new
 .WithTags("System");
 
 api.MapAuthEndpoints();
+api.MapAdminEndpoints();
+api.MapProfileEndpoints();
+api.MapProductEndpoints();
 
 app.Run();
 
