@@ -26,9 +26,15 @@ dotnet run --project AgroMarket.Api
 # Or run the full stack (PostgreSQL + API) in Docker Compose
 cp .env.example .env
 docker compose up --build
+# 3. Run the Next.js PWA frontend (optional, in another terminal)
+cd agro-market-web
+cp .env.example .env.local
+npm install
+npm run dev
 ```
 
 Once running locally in Development:
+- Frontend PWA: `http://localhost:3000`
 - Health check: `GET /health`
 - Ping endpoint: `GET /api/ping`
 - Scalar API Reference: `GET /scalar/v1`
@@ -39,7 +45,7 @@ Once running locally in Development:
 - [x] **Task 2:** Core domain entities, EF Core `AppDbContext`, PostgreSQL configurations (`numeric`, `JSONB`, `xmin`), and initial migration
 - [x] **Task 3:** Passwordless Phone OTP auth, JWT + Refresh Tokens & Telegram Bot deep-link
 - [x] **Task 4:** Admin user verification, Business Profiles & Farmer Product Catalog (`PriceTiers`, `JSONB`, R2 presigned uploads)
-- [ ] **Task 5:** Next.js PWA shell, OTP login, Admin verification, Farmer listing & Restaurant catalog/cart UI
+- [x] **Task 5:** Next.js PWA shell, OTP login, Admin verification, Farmer listing & Restaurant catalog/cart UI
 - [ ] **Task 6:** Transactional multi-farmer `Checkout` (cutoff window + `xmin` stock lock), 1-click `RepeatOrder` & expired order release worker
 - [ ] **Task 7:** Farmer order confirmation, Telegram Bot webhook `[Accept]`/`[Reject]` actions & Morning Milk-Run `DeliveryRuns`
 - [ ] **Task 8:** Weight & quality reconciliation (±10% variance guardrail), buyer confirmation/dispute & COD/BankTransfer/WeeklyInvoice settlement

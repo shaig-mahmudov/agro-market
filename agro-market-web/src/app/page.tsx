@@ -1,0 +1,390 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { productsApi, ApiError } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { computeEffectiveUnitPrice, useCart } from "@/lib/cart";
+import type { Product } from "@/lib/types";
+
+const CATEGORIES = ["", "Tomatoes", "Cucumbers", "Potatoes", "Greens", "Fruits", "Onions"];
+
+export default function CatalogPage() {
+  const { user } = useAuth();
+  const { items, farmerGroups, totalKg, subtotal, addItem, updateQuantity, removeItem, clearCart } =
+    useCart();
+
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState("");
+  const [region, setRegion] = useState("");
+  const [isOrganic, setIsOrganic] = useState(false);
+
+  const [qtyInputs, setQtyInputs] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    let active = true;
+    productsApi
+      .listCatalog({
+        category: category || undefined,
+        region: region || undefined,
+        search: search || undefined,
+        isOrganic: isOrganic || undefined,
+      })
+      .then((res) => {
+        if (!active) return;
+        setProducts(res.items);
+        setError(null);
+        setQtyInputs((prev) => {
+          const next = { ...prev };
+          for (const p of res.items) {
+            if (next[p.id] === undefined) {
+              next[p.id] = p.minOrderKg;
+            }
+          }
+          return next;
+        });
+      })
+      .catch((err) => {
+        if (!active) return;
+        setError(err instanceof ApiError ? err.message : "Failed to load produce catalog.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [category, region, search, isOrganic]);
+
+  return (
+    <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
+      {/* Left: Catalog & Filters */}
+      <section className="space-y-6 lg:col-span-8">
+        <div className="rounded-2xl border border-[#DCE6DF] bg-[#1B4332] p-6 text-white shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-[#95D5B2]">
+                Farm-Gate Direct • Next-Morning Milk-Run (06:00–10:00)
+              </p>
+              <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">
+                Fresh Local Produce for Kitchens
+              </h1>
+              <p className="mt-1.5 text-sm text-[#D8F3DC]">
+                Order directly from verified regional farms before the 19:00 daily cutoff. One consolidated morning delivery and invoice.
+              </p>
+            </div>
+            {!user && (
+              <Link
+                href="/login"
+                className="rounded-xl bg-[#52B788] px-4 py-2.5 text-sm font-semibold text-[#081C15] hover:bg-[#74C69D]"
+              >
+                Sign in with Phone OTP
+              </Link>
+            )}
+          </div>
+        </div>
+
+        {/* Search & Filters */}
+        <div className="rounded-2xl border border-[#E2E8E4] bg-white p-4 shadow-xs">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+            <input
+              type="text"
+              placeholder="Search tomatoes, farm..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="rounded-xl border border-[#D4DFD7] px-3 py-2 text-sm focus:border-[#1B4332] focus:outline-none sm:col-span-2"
+            />
+            <input
+              type="text"
+              placeholder="Region (e.g. Quba, Zira)"
+              value={region}
+              onChange={(e) => setRegion(e.target.value)}
+              className="rounded-xl border border-[#D4DFD7] px-3 py-2 text-sm focus:border-[#1B4332] focus:outline-none"
+            />
+            <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-[#D4DFD7] px-3 py-2 text-sm">
+              <input
+                type="checkbox"
+                checked={isOrganic}
+                onChange={(e) => setIsOrganic(e.target.checked)}
+                className="h-4 w-4 accent-[#1B4332]"
+              />
+              <span>Organic only</span>
+            </label>
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            {CATEGORIES.map((cat) => (
+              <button
+                key={cat || "all"}
+                type="button"
+                onClick={() => setCategory(cat)}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  category === cat
+                    ? "bg-[#1B4332] text-white"
+                    : "bg-[#F1F5F2] text-[#1F2933] hover:bg-[#D8F3DC]"
+                }`}
+              >
+                {cat || "All Categories"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {error && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+            {error}
+          </div>
+        )}
+
+        {loading ? (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {[1, 2, 3, 4].map((n) => (
+              <div
+                key={n}
+                className="h-56 animate-pulse rounded-2xl border border-[#E2E8E4] bg-white p-5"
+              />
+            ))}
+          </div>
+        ) : products.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-[#C7D3CC] bg-white p-10 text-center">
+            <p className="text-base font-semibold text-[#1F2933]">
+              No active produce listings match your filters.
+            </p>
+            <p className="mt-1 text-sm text-stone-500">
+              Verified farmers can publish daily harvest listings from the{" "}
+              <Link href="/farmer" className="font-semibold text-[#1B4332] underline">
+                Farmer Hub
+              </Link>
+              .
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {products.map((product) => {
+              const selectedQty = qtyInputs[product.id] ?? product.minOrderKg;
+              const unitPrice = computeEffectiveUnitPrice(
+                product.basePricePerKg,
+                product.priceTiers,
+                selectedQty
+              );
+              const outOfStock = product.availableStockKg < product.minOrderKg;
+
+              return (
+                <article
+                  key={product.id}
+                  className="flex flex-col justify-between rounded-2xl border border-[#E2E8E4] bg-white p-5 shadow-xs transition-shadow hover:shadow-md"
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <span className="inline-block rounded-full bg-[#E9F5EE] px-2.5 py-0.5 text-[11px] font-semibold text-[#1B4332]">
+                          {product.category}
+                        </span>
+                        {product.metadata.isOrganic && (
+                          <span className="ml-1.5 inline-block rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
+                            Organic
+                          </span>
+                        )}
+                        <h2 className="mt-2 text-lg font-bold text-[#1F2933]">
+                          {product.title}
+                        </h2>
+                        <p className="text-xs text-stone-500">
+                          {product.farmer?.businessName || product.farmer?.fullName || "Local Farm"}
+                          {product.farmer?.region ? ` • ${product.farmer.region}` : ""}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xl font-bold text-[#1B4332]">
+                          ${unitPrice.toFixed(2)}
+                          <span className="text-xs font-normal text-stone-500">/kg</span>
+                        </p>
+                        {unitPrice < product.basePricePerKg && (
+                          <p className="text-[11px] text-emerald-700">
+                            Tier applied (base ${product.basePricePerKg.toFixed(2)})
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {product.description && (
+                      <p className="mt-2 line-clamp-2 text-sm text-stone-600">
+                        {product.description}
+                      </p>
+                    )}
+
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-stone-600">
+                      <span className="rounded-md bg-stone-100 px-2 py-1">
+                        Stock: <strong>{product.availableStockKg} kg</strong>
+                      </span>
+                      <span className="rounded-md bg-stone-100 px-2 py-1">
+                        Min order: <strong>{product.minOrderKg} kg</strong>
+                      </span>
+                      {product.metadata.grade && (
+                        <span className="rounded-md bg-stone-100 px-2 py-1">
+                          Grade: {product.metadata.grade}
+                        </span>
+                      )}
+                      {product.metadata.packaging && (
+                        <span className="rounded-md bg-stone-100 px-2 py-1">
+                          {product.metadata.packaging}
+                        </span>
+                      )}
+                    </div>
+
+                    {product.priceTiers.length > 0 && (
+                      <div className="mt-3 rounded-xl bg-[#F7FAF8] p-2.5 text-xs">
+                        <p className="font-semibold text-[#1B4332]">Volume Pricing</p>
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {product.priceTiers.map((tier, idx) => (
+                            <span
+                              key={tier.id ?? idx}
+                              className="rounded border border-[#D4DFD7] bg-white px-2 py-0.5"
+                            >
+                              {tier.minQuantityKg}+ kg → <strong>${tier.pricePerKg.toFixed(2)}/kg</strong>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-4 flex items-center gap-2 border-t border-[#F0F3F1] pt-4">
+                    <input
+                      type="number"
+                      min={product.minOrderKg}
+                      max={product.availableStockKg}
+                      step="1"
+                      value={selectedQty}
+                      onChange={(e) =>
+                        setQtyInputs((prev) => ({
+                          ...prev,
+                          [product.id]: Number(e.target.value) || product.minOrderKg,
+                        }))
+                      }
+                      disabled={outOfStock}
+                      className="w-24 rounded-xl border border-[#D4DFD7] px-3 py-2 text-sm font-medium focus:border-[#1B4332] focus:outline-none"
+                    />
+                    <span className="text-xs text-stone-500">kg</span>
+                    <button
+                      type="button"
+                      disabled={outOfStock}
+                      onClick={() => addItem(product, selectedQty)}
+                      className="ml-auto rounded-xl bg-[#1B4332] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2D6A4F] disabled:cursor-not-allowed disabled:bg-stone-300"
+                    >
+                      {outOfStock ? "Out of stock" : "Add to Cart"}
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* Right: Multi-Farmer Milk-Run Cart Preview */}
+      <aside id="cart" className="lg:col-span-4">
+        <div className="sticky top-20 rounded-2xl border border-[#DCE6DF] bg-white p-5 shadow-xs">
+          <div className="flex items-center justify-between border-b border-[#F0F3F1] pb-3">
+            <div>
+              <h2 className="text-lg font-bold text-[#1B4332]">Morning Cart</h2>
+              <p className="text-xs text-stone-500">
+                {farmerGroups.length === 0
+                  ? "Multi-farmer orders group into 1 delivery"
+                  : `${farmerGroups.length} farm${farmerGroups.length > 1 ? "s" : ""} → 1 consolidated milk-run`}
+              </p>
+            </div>
+            {items.length > 0 && (
+              <button
+                type="button"
+                onClick={clearCart}
+                className="text-xs font-medium text-red-600 hover:underline"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
+          {items.length === 0 ? (
+            <div className="py-10 text-center text-sm text-stone-500">
+              Add produce from verified farms to preview your consolidated morning order.
+            </div>
+          ) : (
+            <div className="mt-4 space-y-4">
+              {farmerGroups.map((group) => (
+                <div
+                  key={group.farmerId}
+                  className="rounded-xl border border-[#E2E8E4] bg-[#FAF9F6] p-3"
+                >
+                  <div className="flex items-center justify-between text-xs font-semibold text-[#1B4332]">
+                    <span>
+                      {group.farmerName}
+                      {group.region ? ` (${group.region})` : ""}
+                    </span>
+                    <span>${group.subtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="mt-2 space-y-2">
+                    {group.items.map((item) => (
+                      <div
+                        key={item.product.id}
+                        className="flex items-center justify-between gap-2 rounded-lg bg-white p-2 text-xs"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-semibold text-[#1F2933]">
+                            {item.product.title}
+                          </p>
+                          <p className="text-stone-500">
+                            ${item.unitPrice.toFixed(2)}/kg • Line ${item.lineTotal.toFixed(2)}
+                          </p>
+                        </div>
+                        <input
+                          type="number"
+                          min={item.product.minOrderKg}
+                          max={item.product.availableStockKg}
+                          value={item.quantityKg}
+                          onChange={(e) =>
+                            updateQuantity(
+                              item.product.id,
+                              Number(e.target.value) || item.product.minOrderKg
+                            )
+                          }
+                          className="w-16 rounded border border-[#D4DFD7] px-2 py-1 text-right"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeItem(item.product.id)}
+                          className="px-1 text-stone-400 hover:text-red-600"
+                          title="Remove"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              <div className="space-y-2 border-t border-[#E2E8E4] pt-4 text-sm">
+                <div className="flex justify-between text-stone-600">
+                  <span>Total Weight</span>
+                  <span className="font-semibold">{totalKg} kg</span>
+                </div>
+                <div className="flex justify-between text-base font-bold text-[#1B4332]">
+                  <span>Estimated Produce Subtotal</span>
+                  <span>${subtotal.toFixed(2)}</span>
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-[#E9F5EE] p-3 text-xs text-[#1B4332]">
+                <strong>Checkout Ready Next (Task 6):</strong> Transactional multi-farmer checkout with cutoff enforcement, `xmin` stock locking, and 1-click repeat ordering will connect directly to this cart.
+              </div>
+            </div>
+          )}
+        </div>
+      </aside>
+    </div>
+  );
+}
