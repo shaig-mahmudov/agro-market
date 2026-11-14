@@ -48,5 +48,5 @@ Once running locally in Development:
 - [x] **Task 5:** Next.js PWA shell, OTP login, Admin verification, Farmer listing & Restaurant catalog/cart UI
 - [x] **Task 6:** Transactional multi-farmer `Checkout` (cutoff window + `xmin` stock lock), 1-click `RepeatOrder` & expired order release worker
 - [x] **Task 7:** Farmer order confirmation, Telegram Bot webhook `[Accept]`/`[Reject]` actions & Morning Milk-Run `DeliveryRuns`
-- [ ] **Task 8:** Weight & quality reconciliation (±10% variance guardrail), buyer confirmation/dispute & COD/BankTransfer/WeeklyInvoice settlement
+- [x] **Task 8:** Weight & quality reconciliation (±10% variance guardrail), buyer confirmation/dispute & COD/BankTransfer/WeeklyInvoice settlement
 - [ ] **Task 9:** Concurrency/E2E tests & production deployment (`docker-compose.prod.yml`, Caddy SSL, `efbundle` migrations)

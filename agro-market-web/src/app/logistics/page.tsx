@@ -4,7 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ApiError, logisticsApi, ordersApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import type { DeliveryRun, DeliveryRunStatus, Order } from "@/lib/types";
+import type {
+  DeliveryRun,
+  DeliveryRunOrderSummary,
+  DeliveryRunStatus,
+  Order,
+} from "@/lib/types";
 
 const NEXT_RUN_STATUS: Record<DeliveryRunStatus, DeliveryRunStatus | null> = {
   Planned: "PickingUp",
@@ -35,6 +40,11 @@ export default function LogisticsPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [updatingRunId, setUpdatingRunId] = useState<string | null>(null);
+  const [reconcilingOrderId, setReconcilingOrderId] = useState<string | null>(null);
+  const [reconcileDrafts, setReconcileDrafts] = useState<
+    Record<string, { actualKg: string; rejectedKg: string; proofUrl: string }[]>
+  >({});
+  const [savingReconcile, setSavingReconcile] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const canAccess = user?.role === "Admin" || user?.role === "Driver";
@@ -152,6 +162,60 @@ export default function LogisticsPage() {
       setError(err instanceof ApiError ? err.message : "Failed to update run status.");
     } finally {
       setUpdatingRunId(null);
+    }
+  }
+
+  function openReconcilePanel(order: DeliveryRunOrderSummary) {
+    if (reconcilingOrderId === order.id) {
+      setReconcilingOrderId(null);
+      return;
+    }
+    setReconcileDrafts((prev) => ({
+      ...prev,
+      [order.id]: order.items.map((item) => ({
+        actualKg: String(item.actualDeliveredWeightKg ?? item.estimatedWeightKg),
+        rejectedKg: String(item.rejectedWeightKg ?? 0),
+        proofUrl: item.proofPhotoUrl ?? "",
+      })),
+    }));
+    setReconcilingOrderId(order.id);
+  }
+
+  function updateDraftField(
+    orderId: string,
+    index: number,
+    field: "actualKg" | "rejectedKg" | "proofUrl",
+    value: string
+  ) {
+    setReconcileDrafts((prev) => {
+      const current = prev[orderId] ?? [];
+      const next = current.map((row, i) => (i === index ? { ...row, [field]: value } : row));
+      return { ...prev, [orderId]: next };
+    });
+  }
+
+  async function handleSubmitReconcile(order: DeliveryRunOrderSummary) {
+    const drafts = reconcileDrafts[order.id];
+    if (!drafts || drafts.length !== order.items.length) return;
+
+    setSavingReconcile(true);
+    setError(null);
+    try {
+      await ordersApi.reconcile(
+        order.id,
+        order.items.map((item, idx) => ({
+          orderItemId: item.id,
+          actualDeliveredWeightKg: Number(drafts[idx].actualKg || 0),
+          rejectedWeightKg: Number(drafts[idx].rejectedKg || 0),
+          proofPhotoUrl: drafts[idx].proofUrl.trim() || undefined,
+        }))
+      );
+      setReconcilingOrderId(null);
+      await reload();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to reconcile delivery weights.");
+    } finally {
+      setSavingReconcile(false);
     }
   }
 
@@ -321,28 +385,132 @@ export default function LogisticsPage() {
                 </div>
 
                 <div className="mt-3 divide-y divide-[#F0F3F1] text-sm">
-                  {run.orders.map((order) => (
-                    <div
-                      key={order.id}
-                      className="flex flex-wrap items-center justify-between gap-2 py-2"
-                    >
-                      <div>
-                        <p className="font-semibold text-[#1F2933]">
-                          Pickup: {order.farmerName ?? "Farmer"}
-                          {order.farmerAddress ? ` (${order.farmerAddress})` : ""} → Dropoff:{" "}
-                          {order.restaurantName ?? "Restaurant"}
-                          {order.deliveryAddress ? ` (${order.deliveryAddress})` : ""}
-                        </p>
-                        <p className="text-xs text-stone-500">
-                          Order #{order.id.slice(0, 8)} • {order.totalEstimatedWeightKg} kg • $
-                          {order.estimatedTotalAmount.toFixed(2)}
-                        </p>
+                  {run.orders.map((order) => {
+                    const canReconcile =
+                      order.status === "Confirmed" ||
+                      order.status === "PickedUp" ||
+                      order.status === "InTransit";
+                    const isOpen = reconcilingOrderId === order.id;
+                    const drafts = reconcileDrafts[order.id] ?? [];
+
+                    return (
+                      <div key={order.id} className="py-2.5">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="font-semibold text-[#1F2933]">
+                              Pickup: {order.farmerName ?? "Farmer"}
+                              {order.farmerAddress ? ` (${order.farmerAddress})` : ""} → Dropoff:{" "}
+                              {order.restaurantName ?? "Restaurant"}
+                              {order.deliveryAddress ? ` (${order.deliveryAddress})` : ""}
+                            </p>
+                            <p className="text-xs text-stone-500">
+                              Order #{order.id.slice(0, 8)} • Est {order.totalEstimatedWeightKg} kg
+                              {" "}• Final ${order.finalTotalAmount.toFixed(2)}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-medium text-stone-700">
+                              {order.status}
+                            </span>
+                            {canReconcile && (
+                              <button
+                                type="button"
+                                onClick={() => openReconcilePanel(order)}
+                                className="rounded-lg border border-[#1B4332] px-2.5 py-1 text-xs font-semibold text-[#1B4332] hover:bg-[#E9F5EE]"
+                              >
+                                {isOpen ? "Close Scale Form" : "Reconcile Weights"}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {isOpen && drafts.length === order.items.length && (
+                          <div className="mt-3 space-y-3 rounded-xl border border-[#DCE6DF] bg-[#FAF9F6] p-3 text-xs">
+                            <p className="font-semibold text-[#1B4332]">
+                              Doorstep Scale & Quality Entry (±10% variance triggers buyer sign-off)
+                            </p>
+                            {order.items.map((item, idx) => {
+                              const est = item.estimatedWeightKg;
+                              const actual = Number(drafts[idx].actualKg || 0);
+                              const rejected = Number(drafts[idx].rejectedKg || 0);
+                              const variancePct =
+                                est > 0 ? Math.abs((actual - est) / est) * 100 : 0;
+                              const flagged = variancePct > 10 || rejected > 0;
+
+                              return (
+                                <div
+                                  key={item.id}
+                                  className="grid gap-2 rounded-lg border border-[#E2E8E4] bg-white p-2.5 sm:grid-cols-4"
+                                >
+                                  <div>
+                                    <p className="font-semibold text-[#1F2933]">
+                                      {item.productTitleSnapshot}
+                                    </p>
+                                    <p className="text-stone-500">
+                                      Est: {est} kg @ ${item.unitPriceApplied.toFixed(2)}/kg
+                                    </p>
+                                    {flagged && (
+                                      <p className="mt-0.5 font-semibold text-amber-700">
+                                        {variancePct.toFixed(1)}% var / {rejected}kg rej → Buyer approval required
+                                      </p>
+                                    )}
+                                  </div>
+                                  <label className="block">
+                                    <span className="text-stone-600">Actual Weight (kg)</span>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      value={drafts[idx].actualKg}
+                                      onChange={(e) =>
+                                        updateDraftField(order.id, idx, "actualKg", e.target.value)
+                                      }
+                                      className="mt-1 w-full rounded-lg border border-[#D4DFD7] px-2 py-1 text-xs"
+                                    />
+                                  </label>
+                                  <label className="block">
+                                    <span className="text-stone-600">Rejected (kg)</span>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      value={drafts[idx].rejectedKg}
+                                      onChange={(e) =>
+                                        updateDraftField(order.id, idx, "rejectedKg", e.target.value)
+                                      }
+                                      className="mt-1 w-full rounded-lg border border-[#D4DFD7] px-2 py-1 text-xs"
+                                    />
+                                  </label>
+                                  <label className="block">
+                                    <span className="text-stone-600">Scale Photo URL (optional)</span>
+                                    <input
+                                      type="url"
+                                      placeholder="https://..."
+                                      value={drafts[idx].proofUrl}
+                                      onChange={(e) =>
+                                        updateDraftField(order.id, idx, "proofUrl", e.target.value)
+                                      }
+                                      className="mt-1 w-full rounded-lg border border-[#D4DFD7] px-2 py-1 text-xs"
+                                    />
+                                  </label>
+                                </div>
+                              );
+                            })}
+                            <div className="flex justify-end">
+                              <button
+                                type="button"
+                                disabled={savingReconcile}
+                                onClick={() => void handleSubmitReconcile(order)}
+                                className="rounded-xl bg-[#1B4332] px-4 py-2 text-xs font-semibold text-white hover:bg-[#2D6A4F] disabled:opacity-50"
+                              >
+                                {savingReconcile ? "Saving..." : "Submit Reconciled Delivery"}
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-medium text-stone-700">
-                        {order.status}
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             );

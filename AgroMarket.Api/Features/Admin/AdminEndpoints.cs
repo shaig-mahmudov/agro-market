@@ -19,6 +19,11 @@ public static class AdminEndpoints
             .WithName("AdminVerifyUser")
             .WithSummary("Approve or update verification status and role for a user");
 
+        group.MapPatch("/orders/{id:guid}/payment", MarkOrderPaid.Handle)
+            .WithValidation<MarkOrderPaid.Request>()
+            .WithName("AdminMarkOrderPayment")
+            .WithSummary("Reconcile COD, Bank Transfer, or Weekly Invoice payment settlement");
+
         return api;
     }
 }

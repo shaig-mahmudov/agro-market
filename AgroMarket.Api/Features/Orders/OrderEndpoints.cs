@@ -1,4 +1,5 @@
 using AgroMarket.Api.Common;
+using AgroMarket.Api.Features.Products;
 
 namespace AgroMarket.Api.Features.Orders;
 
@@ -42,6 +43,24 @@ public static class OrderEndpoints
             .WithValidation<FarmerRespond.Request>()
             .WithName("FarmerRespondToOrder")
             .WithSummary("Accept or reject a pending farmer order (restores stock on reject)");
+
+        group.MapPost("/{id:guid}/proof-upload-url", ReconcileDelivery.HandlePresignProofUpload)
+            .RequireAuthorization(AuthorizationPolicies.VerifiedUser)
+            .WithValidation<PresignUploadRequest>()
+            .WithName("CreateDeliveryProofUploadUrl")
+            .WithSummary("Generate a Cloudflare R2 presigned PUT URL for doorstep delivery/scale proof");
+
+        group.MapPatch("/{id:guid}/reconcile", ReconcileDelivery.Handle)
+            .RequireAuthorization(AuthorizationPolicies.VerifiedUser)
+            .WithValidation<ReconcileDelivery.Request>()
+            .WithName("ReconcileDelivery")
+            .WithSummary("Record actual and rejected delivery weights with ±10% variance guardrail");
+
+        group.MapPatch("/{id:guid}/confirm", ConfirmReceipt.Handle)
+            .RequireAuthorization(AuthorizationPolicies.VerifiedUser)
+            .WithValidation<ConfirmReceipt.Request>()
+            .WithName("ConfirmDeliveryReceipt")
+            .WithSummary("Buyer approves or disputes an order awaiting variance/quality approval");
 
         api.MapPost("/webhooks/telegram", TelegramWebhook.Handle)
             .WithTags("Webhooks")

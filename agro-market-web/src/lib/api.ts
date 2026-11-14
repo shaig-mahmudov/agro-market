@@ -9,6 +9,7 @@ import type {
   OrderStatus,
   PagedResult,
   PaymentMethod,
+  PaymentStatus,
   PresignedUploadResult,
   Product,
   ProductMetadata,
@@ -205,6 +206,13 @@ export const adminApi = {
       auth: true,
       body: JSON.stringify({ isVerified, ...(role ? { role } : {}) }),
     }),
+
+  markOrderPaid: (id: string, paymentStatus: PaymentStatus, paymentMethod?: PaymentMethod) =>
+    apiFetch<Order>(`/api/admin/orders/${id}/payment`, {
+      method: "PATCH",
+      auth: true,
+      body: JSON.stringify({ paymentStatus, ...(paymentMethod ? { paymentMethod } : {}) }),
+    }),
 };
 
 export const productsApi = {
@@ -311,6 +319,35 @@ export const ordersApi = {
       method: "PATCH",
       auth: true,
       body: JSON.stringify({ accept }),
+    }),
+
+  createProofUploadUrl: (id: string, fileName: string, contentType: string) =>
+    apiFetch<PresignedUploadResult>(`/api/orders/${id}/proof-upload-url`, {
+      method: "POST",
+      auth: true,
+      body: JSON.stringify({ fileName, contentType }),
+    }),
+
+  reconcile: (
+    id: string,
+    items: {
+      orderItemId: string;
+      actualDeliveredWeightKg: number;
+      rejectedWeightKg: number;
+      proofPhotoUrl?: string;
+    }[]
+  ) =>
+    apiFetch<Order>(`/api/orders/${id}/reconcile`, {
+      method: "PATCH",
+      auth: true,
+      body: JSON.stringify({ items }),
+    }),
+
+  confirmReceipt: (id: string, approve: boolean, disputeNote?: string) =>
+    apiFetch<Order>(`/api/orders/${id}/confirm`, {
+      method: "PATCH",
+      auth: true,
+      body: JSON.stringify({ approve, ...(disputeNote ? { disputeNote } : {}) }),
     }),
 };
 

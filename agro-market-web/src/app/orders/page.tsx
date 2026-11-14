@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ApiError, ordersApi } from "@/lib/api";
+import { adminApi, ApiError, ordersApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import type { CheckoutGroup, Order } from "@/lib/types";
+import type { CheckoutGroup, Order, PaymentMethod, PaymentStatus } from "@/lib/types";
 
 export default function OrdersPage() {
   const { user } = useAuth();
@@ -14,6 +14,8 @@ export default function OrdersPage() {
   const [error, setError] = useState<string | null>(null);
   const [repeatingId, setRepeatingId] = useState<string | null>(null);
   const [respondingId, setRespondingId] = useState<string | null>(null);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [payingOrderId, setPayingOrderId] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     if (!user) return;
@@ -104,6 +106,42 @@ export default function OrdersPage() {
       );
     } finally {
       setRespondingId(null);
+    }
+  }
+
+  async function handleConfirmReceipt(orderId: string, approve: boolean) {
+    setConfirmingId(orderId);
+    setError(null);
+    try {
+      await ordersApi.confirmReceipt(orderId, approve);
+      await reload();
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : approve
+            ? "Could not approve delivery weight."
+            : "Could not dispute delivery."
+      );
+    } finally {
+      setConfirmingId(null);
+    }
+  }
+
+  async function handleSetPaymentStatus(
+    orderId: string,
+    paymentStatus: PaymentStatus,
+    paymentMethod?: PaymentMethod
+  ) {
+    setPayingOrderId(orderId);
+    setError(null);
+    try {
+      await adminApi.markOrderPaid(orderId, paymentStatus, paymentMethod);
+      await reload();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not update payment status.");
+    } finally {
+      setPayingOrderId(null);
     }
   }
 
@@ -242,41 +280,178 @@ export default function OrdersPage() {
                 </div>
 
                 <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-                  {group.orders.map((order) => (
-                    <div
-                      key={order.id}
-                      className="rounded-xl border border-[#E2E8E4] bg-[#FAF9F6] p-3.5 text-xs"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-[#1F2933]">
-                          {order.farmerName ?? "Farm"}
-                        </span>
-                        <span className="rounded-full bg-[#D8F3DC] px-2.5 py-0.5 font-semibold text-[#1B4332]">
-                          {order.status}
-                        </span>
-                      </div>
-                      <div className="mt-2 space-y-1">
-                        {order.items.map((item) => (
-                          <div key={item.id} className="flex justify-between text-stone-700">
-                            <span>
-                              {item.productTitleSnapshot} ({item.estimatedWeightKg} kg @ $
-                              {item.unitPriceApplied.toFixed(2)})
+                  {group.orders.map((order) => {
+                    const needsApproval =
+                      order.status === "DeliveredPendingApproval" || order.status === "Disputed";
+                    const canBuyerConfirm =
+                      needsApproval && (user.role === "Restaurant" || user.role === "Admin");
+                    const isAdmin = user.role === "Admin";
+
+                    return (
+                      <div
+                        key={order.id}
+                        className="rounded-xl border border-[#E2E8E4] bg-[#FAF9F6] p-3.5 text-xs"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-bold text-[#1F2933]">
+                            {order.farmerName ?? "Farm"}
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className={`rounded-full px-2 py-0.5 font-semibold ${
+                                order.paymentStatus === "Paid"
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : order.paymentStatus === "Disputed"
+                                    ? "bg-red-100 text-red-800"
+                                    : "bg-stone-200 text-stone-700"
+                              }`}
+                            >
+                              {order.paymentMethod} • {order.paymentStatus}
                             </span>
-                            <span>
-                              ${(item.estimatedWeightKg * item.unitPriceApplied).toFixed(2)}
+                            <span
+                              className={`rounded-full px-2.5 py-0.5 font-semibold ${
+                                order.status === "DeliveredPendingApproval" ||
+                                order.status === "Disputed"
+                                  ? "bg-amber-100 text-amber-800"
+                                  : "bg-[#D8F3DC] text-[#1B4332]"
+                              }`}
+                            >
+                              {order.status}
                             </span>
                           </div>
-                        ))}
+                        </div>
+
+                        <div className="mt-2 space-y-1">
+                          {order.items.map((item) => {
+                            const hasActual = item.actualDeliveredWeightKg !== null;
+                            const chargeableKg = hasActual
+                              ? Math.max(
+                                  0,
+                                  (item.actualDeliveredWeightKg ?? 0) -
+                                    (item.rejectedWeightKg ?? 0)
+                                )
+                              : item.estimatedWeightKg;
+
+                            return (
+                              <div key={item.id} className="space-y-0.5 text-stone-700">
+                                <div className="flex justify-between">
+                                  <span>
+                                    {item.productTitleSnapshot} (
+                                    {hasActual
+                                      ? `Actual ${item.actualDeliveredWeightKg} kg`
+                                      : `Est ${item.estimatedWeightKg} kg`}
+                                    {(item.rejectedWeightKg ?? 0) > 0
+                                      ? `, Rej ${item.rejectedWeightKg} kg`
+                                      : ""}{" "}
+                                    @ ${item.unitPriceApplied.toFixed(2)}/kg)
+                                  </span>
+                                  <span className="font-semibold">
+                                    ${(chargeableKg * item.unitPriceApplied).toFixed(2)}
+                                  </span>
+                                </div>
+                                {item.proofPhotoUrl && (
+                                  <a
+                                    href={item.proofPhotoUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-[11px] font-medium text-[#2D6A4F] underline"
+                                  >
+                                    View delivery/scale proof
+                                  </a>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        <div className="mt-2 flex justify-between border-t border-[#E2E8E4] pt-2 font-semibold text-[#1B4332]">
+                          <span>
+                            Final Total (incl. ${order.platformFeeAmount.toFixed(2)} fee + $
+                            {order.deliveryFeeAmount.toFixed(2)} deliv.)
+                          </span>
+                          <span>${order.finalTotalAmount.toFixed(2)}</span>
+                        </div>
+
+                        {canBuyerConfirm && (
+                          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-2.5">
+                            <p className="font-semibold text-amber-900">
+                              {order.status === "Disputed"
+                                ? "Order disputed — approve updated weight once resolved."
+                                : "Weight variance (> ±10%) or rejected produce requires buyer sign-off."}
+                            </p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                disabled={confirmingId === order.id}
+                                onClick={() => void handleConfirmReceipt(order.id, true)}
+                                className="rounded-lg bg-[#1B4332] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#2D6A4F] disabled:opacity-50"
+                              >
+                                {confirmingId === order.id ? "Saving..." : "Approve Final Weight"}
+                              </button>
+                              {order.status === "DeliveredPendingApproval" && (
+                                <button
+                                  type="button"
+                                  disabled={confirmingId === order.id}
+                                  onClick={() => void handleConfirmReceipt(order.id, false)}
+                                  className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
+                                >
+                                  Dispute Delivery
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {isAdmin && order.status !== "Cancelled" && (
+                          <div className="mt-2 flex flex-wrap items-center justify-end gap-1.5 border-t border-[#E2E8E4] pt-2">
+                            {order.paymentStatus !== "Paid" ? (
+                              <>
+                                <button
+                                  type="button"
+                                  disabled={payingOrderId === order.id}
+                                  onClick={() =>
+                                    void handleSetPaymentStatus(order.id, "Paid", "CashOnDelivery")
+                                  }
+                                  className="rounded-lg bg-emerald-700 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+                                >
+                                  Mark Paid (COD)
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={payingOrderId === order.id}
+                                  onClick={() =>
+                                    void handleSetPaymentStatus(order.id, "Paid", "BankTransfer")
+                                  }
+                                  className="rounded-lg border border-emerald-700 px-2.5 py-1 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-50 disabled:opacity-50"
+                                >
+                                  Bank Transfer Paid
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={payingOrderId === order.id}
+                                  onClick={() =>
+                                    void handleSetPaymentStatus(order.id, "Paid", "WeeklyInvoice")
+                                  }
+                                  className="rounded-lg border border-stone-300 px-2.5 py-1 text-[11px] font-semibold text-stone-700 hover:bg-stone-100 disabled:opacity-50"
+                                >
+                                  Weekly Invoice Paid
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={payingOrderId === order.id}
+                                onClick={() => void handleSetPaymentStatus(order.id, "Unpaid")}
+                                className="rounded-lg border border-stone-300 px-2.5 py-1 text-[11px] font-semibold text-stone-600 hover:bg-stone-100 disabled:opacity-50"
+                              >
+                                Revert to Unpaid
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
-                      <div className="mt-2 flex justify-between border-t border-[#E2E8E4] pt-2 font-semibold text-[#1B4332]">
-                        <span>
-                          Total (incl. ${order.platformFeeAmount.toFixed(2)} fee + $
-                          {order.deliveryFeeAmount.toFixed(2)} deliv.)
-                        </span>
-                        <span>${order.finalTotalAmount.toFixed(2)}</span>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </section>
             );

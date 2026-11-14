@@ -184,7 +184,9 @@ export interface DeliveryRunOrderSummary {
   restaurantName: string | null;
   deliveryAddress: string | null;
   estimatedTotalAmount: number;
+  finalTotalAmount: number;
   totalEstimatedWeightKg: number;
+  items: OrderItem[];
 }
 
 export interface DeliveryRun {

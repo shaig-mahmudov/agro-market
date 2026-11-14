@@ -1,4 +1,5 @@
 using AgroMarket.Api.Database.Entities;
+using AgroMarket.Api.Features.Orders;
 
 namespace AgroMarket.Api.Features.Logistics;
 
@@ -12,7 +13,9 @@ public sealed record DeliveryRunOrderDto(
     string? RestaurantName,
     string? DeliveryAddress,
     decimal EstimatedTotalAmount,
-    decimal TotalEstimatedWeightKg);
+    decimal FinalTotalAmount,
+    decimal TotalEstimatedWeightKg,
+    IReadOnlyList<OrderItemDto> Items);
 
 public sealed record DeliveryRunDto(
     Guid Id,
@@ -46,6 +49,16 @@ public static class LogisticsMappings
                 o.Restaurant?.BusinessProfile?.BusinessName ?? o.Restaurant?.FullName,
                 o.CheckoutGroup?.DeliveryAddress,
                 o.EstimatedTotalAmount,
-                o.Items.Sum(i => i.EstimatedWeightKg)))
+                o.FinalTotalAmount,
+                o.Items.Sum(i => i.EstimatedWeightKg),
+                o.Items.Select(i => new OrderItemDto(
+                    i.Id,
+                    i.ProductId,
+                    i.ProductTitleSnapshot,
+                    i.UnitPriceApplied,
+                    i.EstimatedWeightKg,
+                    i.ActualDeliveredWeightKg,
+                    i.RejectedWeightKg,
+                    i.ProofPhotoUrl)).ToList()))
             .ToList());
 }
