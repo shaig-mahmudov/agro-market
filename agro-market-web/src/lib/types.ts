@@ -143,7 +143,9 @@ export interface Order {
   restaurantId: string;
   farmerId: string;
   farmerName: string | null;
+  farmerTaxId: string | null;
   restaurantName: string | null;
+  restaurantTaxId: string | null;
   deliveryRunId: string | null;
   fulfillmentType: FulfillmentType;
   status: OrderStatus;
@@ -153,6 +155,7 @@ export interface Order {
   finalTotalAmount: number;
   paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;
+  disputeNote: string | null;
   expiresAt: string;
   confirmedAt: string | null;
   deliveredAt: string | null;
@@ -164,6 +167,8 @@ export interface Order {
 export interface CheckoutGroup {
   id: string;
   restaurantId: string;
+  restaurantName: string | null;
+  restaurantTaxId: string | null;
   deliveryAddress: string;
   scheduledDeliveryDate: string;
   cutoffAt: string;

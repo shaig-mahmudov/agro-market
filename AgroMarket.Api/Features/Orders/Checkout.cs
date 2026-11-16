@@ -270,6 +270,7 @@ public static class Checkout
                 order.Farmer = farmer;
             }
         }
+        checkoutGroup.Restaurant = restaurant;
 
         if (telegramNotifier is not null)
         {

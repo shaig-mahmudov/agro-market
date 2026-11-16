@@ -18,7 +18,9 @@ public sealed record OrderDto(
     Guid RestaurantId,
     Guid FarmerId,
     string? FarmerName,
+    string? FarmerTaxId,
     string? RestaurantName,
+    string? RestaurantTaxId,
     Guid? DeliveryRunId,
     FulfillmentType FulfillmentType,
     OrderStatus Status,
@@ -28,6 +30,7 @@ public sealed record OrderDto(
     decimal FinalTotalAmount,
     PaymentMethod PaymentMethod,
     PaymentStatus PaymentStatus,
+    string? DisputeNote,
     DateTimeOffset ExpiresAt,
     DateTimeOffset? ConfirmedAt,
     DateTimeOffset? DeliveredAt,
@@ -38,6 +41,8 @@ public sealed record OrderDto(
 public sealed record CheckoutGroupDto(
     Guid Id,
     Guid RestaurantId,
+    string? RestaurantName,
+    string? RestaurantTaxId,
     string DeliveryAddress,
     DateOnly ScheduledDeliveryDate,
     DateTimeOffset CutoffAt,
@@ -53,7 +58,9 @@ public static class OrderMappings
         order.RestaurantId,
         order.FarmerId,
         order.Farmer?.BusinessProfile?.BusinessName ?? order.Farmer?.FullName,
+        order.Farmer?.BusinessProfile?.TaxId,
         order.Restaurant?.BusinessProfile?.BusinessName ?? order.Restaurant?.FullName,
+        order.Restaurant?.BusinessProfile?.TaxId,
         order.DeliveryRunId,
         order.FulfillmentType,
         order.Status,
@@ -63,6 +70,7 @@ public static class OrderMappings
         order.FinalTotalAmount,
         order.PaymentMethod,
         order.PaymentStatus,
+        order.DisputeNote,
         order.ExpiresAt,
         order.ConfirmedAt,
         order.DeliveredAt,
@@ -78,13 +86,19 @@ public static class OrderMappings
             i.RejectedWeightKg,
             i.ProofPhotoUrl)).ToList());
 
-    public static CheckoutGroupDto ToCheckoutGroupDto(CheckoutGroup group) => new(
-        group.Id,
-        group.RestaurantId,
-        group.DeliveryAddress,
-        group.ScheduledDeliveryDate,
-        group.CutoffAt,
-        group.TotalDeliveryFee,
-        group.CreatedAt,
-        group.Orders.OrderBy(o => o.CreatedAt).Select(ToOrderDto).ToList());
+    public static CheckoutGroupDto ToCheckoutGroupDto(CheckoutGroup group)
+    {
+        var firstOrderRestaurant = group.Restaurant ?? group.Orders.FirstOrDefault()?.Restaurant;
+        return new(
+            group.Id,
+            group.RestaurantId,
+            firstOrderRestaurant?.BusinessProfile?.BusinessName ?? firstOrderRestaurant?.FullName,
+            firstOrderRestaurant?.BusinessProfile?.TaxId,
+            group.DeliveryAddress,
+            group.ScheduledDeliveryDate,
+            group.CutoffAt,
+            group.TotalDeliveryFee,
+            group.CreatedAt,
+            group.Orders.OrderBy(o => o.CreatedAt).Select(ToOrderDto).ToList());
+    }
 }

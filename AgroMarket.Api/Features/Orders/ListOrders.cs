@@ -154,7 +154,7 @@ public static class ListOrders
             return TypedResults.Problem(title: "Order not found", statusCode: StatusCodes.Status404NotFound);
         }
 
-        if (role != UserRole.Admin && order.RestaurantId != userId && order.FarmerId != userId)
+        if (role is not (UserRole.Admin or UserRole.Driver) && order.RestaurantId != userId && order.FarmerId != userId)
         {
             return TypedResults.Problem(title: "Forbidden", statusCode: StatusCodes.Status403Forbidden);
         }

@@ -15,6 +15,7 @@ public sealed class Order
     public decimal FinalTotalAmount { get; set; }
     public PaymentMethod PaymentMethod { get; set; } = PaymentMethod.CashOnDelivery;
     public PaymentStatus PaymentStatus { get; set; } = PaymentStatus.Unpaid;
+    public string? DisputeNote { get; set; }
     public DateTimeOffset ExpiresAt { get; set; }
     public DateTimeOffset? ConfirmedAt { get; set; }
     public DateTimeOffset? DeliveredAt { get; set; }

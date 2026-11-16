@@ -240,12 +240,16 @@ export const productsApi = {
     region?: string;
     search?: string;
     isOrganic?: boolean;
+    page?: number;
+    pageSize?: number;
   }) => {
     const qs = new URLSearchParams();
     if (params?.category) qs.set("category", params.category);
     if (params?.region) qs.set("region", params.region);
     if (params?.search) qs.set("search", params.search);
     if (params?.isOrganic) qs.set("isOrganic", "true");
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
     const suffix = qs.toString() ? `?${qs.toString()}` : "";
     return apiFetch<PagedResult<Product>>(`/api/products${suffix}`);
   },
@@ -280,8 +284,13 @@ export const productsApi = {
   update: (
     id: string,
     payload: {
+      category?: string;
+      title?: string;
+      description?: string;
       availableStockKg?: number;
+      minOrderKg?: number;
       basePricePerKg?: number;
+      priceTiers?: { minQuantityKg: number; pricePerKg: number }[];
       isActive?: boolean;
       rowVersion?: number;
     }
@@ -303,6 +312,7 @@ export const ordersApi = {
   checkout: (payload: {
     items: { productId: string; weightKg: number }[];
     deliveryAddress?: string;
+    scheduledDeliveryDate?: string;
     paymentMethod?: PaymentMethod;
     fulfillmentType?: FulfillmentType;
   }) =>

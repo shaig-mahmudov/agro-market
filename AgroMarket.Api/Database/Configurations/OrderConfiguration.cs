@@ -56,6 +56,9 @@ public sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
             .HasMaxLength(32)
             .IsRequired();
 
+        builder.Property(o => o.DisputeNote)
+            .HasMaxLength(500);
+
         builder.Property(o => o.EstimatedTotalAmount).HasPrecision(12, 2);
         builder.Property(o => o.PlatformFeeAmount).HasPrecision(12, 2);
         builder.Property(o => o.DeliveryFeeAmount).HasPrecision(12, 2);

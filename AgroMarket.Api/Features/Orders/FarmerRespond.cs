@@ -2,6 +2,7 @@ using System.Security.Claims;
 using AgroMarket.Api.Common;
 using AgroMarket.Api.Database;
 using AgroMarket.Api.Database.Entities;
+using AgroMarket.Api.Infrastructure.Notifications;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 
@@ -16,12 +17,13 @@ public static class FarmerRespond
         Request request,
         ClaimsPrincipal principal,
         AppDbContext db,
+        ITelegramNotifier telegramNotifier,
         CancellationToken cancellationToken)
     {
         var userId = principal.GetUserId();
         var isAdmin = principal.GetUserRole() == UserRole.Admin;
 
-        return await RespondToOrderAsync(id, userId, isAdmin, request.Accept, db, cancellationToken);
+        return await RespondToOrderAsync(id, userId, isAdmin, request.Accept, db, cancellationToken, telegramNotifier);
     }
 
     public static async Task<Results<Ok<OrderDto>, ProblemHttpResult>> RespondToOrderAsync(
@@ -30,7 +32,8 @@ public static class FarmerRespond
         bool isAdmin,
         bool accept,
         AppDbContext db,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ITelegramNotifier? telegramNotifier = null)
     {
         await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
 
@@ -111,6 +114,20 @@ public static class FarmerRespond
                 title: "Concurrency conflict",
                 detail: "Stock changed concurrently while updating this order. Please retry.",
                 statusCode: StatusCodes.Status409Conflict);
+        }
+
+        if (telegramNotifier is not null && order.Restaurant?.TelegramChatId is { } restaurantChatId)
+        {
+            var farmerName = order.Farmer?.BusinessProfile?.BusinessName ?? order.Farmer?.FullName ?? "Farmer";
+            var summary = accept
+                ? "Your order was confirmed for the morning milk-run."
+                : "This farm could not fulfill your order and it was cancelled. Check the catalog for alternatives.";
+            await telegramNotifier.NotifyRestaurantOrderStatusAsync(
+                order,
+                restaurantChatId,
+                farmerName,
+                summary,
+                cancellationToken);
         }
 
         return TypedResults.Ok(OrderMappings.ToOrderDto(order));

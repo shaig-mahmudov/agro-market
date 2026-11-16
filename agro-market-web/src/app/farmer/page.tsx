@@ -18,15 +18,25 @@ export default function FarmerHubPage() {
   const [availableStockKg, setAvailableStockKg] = useState("150");
   const [minOrderKg, setMinOrderKg] = useState("10");
   const [basePricePerKg, setBasePricePerKg] = useState("2.40");
-  const [tierMinKg, setTierMinKg] = useState("50");
-  const [tierPrice, setTierPrice] = useState("2.00");
+  const [tiers, setTiers] = useState<{ minKg: string; price: string }[]>([
+    { minKg: "50", price: "2.00" },
+  ]);
   const [variety, setVariety] = useState("");
+  const [harvestDate, setHarvestDate] = useState("");
   const [grade, setGrade] = useState("A");
   const [packaging, setPackaging] = useState("10kg crate");
   const [isOrganic, setIsOrganic] = useState(false);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [creating, setCreating] = useState(false);
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editStockKg, setEditStockKg] = useState("");
+  const [editMinOrderKg, setEditMinOrderKg] = useState("");
+  const [editBasePrice, setEditBasePrice] = useState("");
+  const [editTiers, setEditTiers] = useState<{ minKg: string; price: string }[]>([]);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const loadMine = useCallback(async () => {
     if (!user) return;
@@ -83,10 +93,9 @@ export default function FarmerHubPage() {
     setCreating(true);
     setError(null);
     try {
-      const priceTiers =
-        Number(tierMinKg) > 0 && Number(tierPrice) > 0
-          ? [{ minQuantityKg: Number(tierMinKg), pricePerKg: Number(tierPrice) }]
-          : [];
+      const priceTiers = tiers
+        .filter((t) => Number(t.minKg) > 0 && Number(t.price) > 0)
+        .map((t) => ({ minQuantityKg: Number(t.minKg), pricePerKg: Number(t.price) }));
 
       await productsApi.create({
         category,
@@ -97,6 +106,7 @@ export default function FarmerHubPage() {
         basePricePerKg: Number(basePricePerKg),
         metadata: {
           variety: variety || null,
+          harvestDate: harvestDate || null,
           grade: grade || null,
           packaging: packaging || null,
           isOrganic,
@@ -113,6 +123,49 @@ export default function FarmerHubPage() {
       setError(err instanceof ApiError ? err.message : "Failed to publish listing.");
     } finally {
       setCreating(false);
+    }
+  }
+
+  function startEditing(product: Product) {
+    if (editingId === product.id) {
+      setEditingId(null);
+      return;
+    }
+    setEditingId(product.id);
+    setEditTitle(product.title);
+    setEditStockKg(String(product.availableStockKg));
+    setEditMinOrderKg(String(product.minOrderKg));
+    setEditBasePrice(String(product.basePricePerKg));
+    setEditTiers(
+      product.priceTiers.map((t) => ({
+        minKg: String(t.minQuantityKg),
+        price: String(t.pricePerKg),
+      }))
+    );
+  }
+
+  async function handleSaveEdit(product: Product) {
+    setSavingEdit(true);
+    setError(null);
+    try {
+      const priceTiers = editTiers
+        .filter((t) => Number(t.minKg) > 0 && Number(t.price) > 0)
+        .map((t) => ({ minQuantityKg: Number(t.minKg), pricePerKg: Number(t.price) }));
+
+      await productsApi.update(product.id, {
+        title: editTitle.trim() || product.title,
+        availableStockKg: Number(editStockKg),
+        minOrderKg: Number(editMinOrderKg),
+        basePricePerKg: Number(editBasePrice),
+        priceTiers,
+        rowVersion: product.rowVersion,
+      });
+      setEditingId(null);
+      await loadMine();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to save listing updates.");
+    } finally {
+      setSavingEdit(false);
     }
   }
 
@@ -264,46 +317,77 @@ export default function FarmerHubPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 rounded-xl bg-[#F7FAF8] p-3">
-              <div>
-                <label className="block text-xs font-semibold text-[#1B4332]">
-                  Bulk Tier Min (kg)
-                </label>
-                <input
-                  type="number"
-                  value={tierMinKg}
-                  onChange={(e) => setTierMinKg(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-[#D4DFD7] bg-white px-2.5 py-1.5 text-sm"
-                />
+            <div className="space-y-2 rounded-xl bg-[#F7FAF8] p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-[#1B4332]">
+                  Volume Price Tiers (optional)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setTiers((prev) => [...prev, { minKg: "", price: "" }])}
+                  className="text-xs font-semibold text-[#2D6A4F] hover:underline"
+                >
+                  + Add Tier
+                </button>
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-[#1B4332]">
-                  Bulk Tier $/kg
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={tierPrice}
-                  onChange={(e) => setTierPrice(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-[#D4DFD7] bg-white px-2.5 py-1.5 text-sm"
-                />
-              </div>
+              {tiers.map((tier, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    placeholder="Min kg (e.g. 50)"
+                    value={tier.minKg}
+                    onChange={(e) =>
+                      setTiers((prev) =>
+                        prev.map((row, i) => (i === idx ? { ...row, minKg: e.target.value } : row))
+                      )
+                    }
+                    className="w-1/2 rounded-lg border border-[#D4DFD7] bg-white px-2.5 py-1.5 text-xs"
+                  />
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="$/kg (e.g. 2.00)"
+                    value={tier.price}
+                    onChange={(e) =>
+                      setTiers((prev) =>
+                        prev.map((row, i) => (i === idx ? { ...row, price: e.target.value } : row))
+                      )
+                    }
+                    className="w-1/2 rounded-lg border border-[#D4DFD7] bg-white px-2.5 py-1.5 text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setTiers((prev) => prev.filter((_, i) => i !== idx))}
+                    className="px-1.5 text-xs text-stone-400 hover:text-red-600"
+                    title="Remove tier"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-2">
               <input
                 type="text"
                 value={grade}
                 onChange={(e) => setGrade(e.target.value)}
                 placeholder="Grade (A)"
-                className="rounded-xl border border-[#D4DFD7] px-3 py-2 text-sm"
+                className="rounded-xl border border-[#D4DFD7] px-2.5 py-2 text-xs"
               />
               <input
                 type="text"
                 value={packaging}
                 onChange={(e) => setPackaging(e.target.value)}
                 placeholder="10kg crate"
-                className="rounded-xl border border-[#D4DFD7] px-3 py-2 text-sm"
+                className="rounded-xl border border-[#D4DFD7] px-2.5 py-2 text-xs"
+              />
+              <input
+                type="date"
+                value={harvestDate}
+                onChange={(e) => setHarvestDate(e.target.value)}
+                title="Harvest Date"
+                className="rounded-xl border border-[#D4DFD7] px-2 py-2 text-xs"
               />
             </div>
 
@@ -363,50 +447,198 @@ export default function FarmerHubPage() {
             products.map((p) => (
               <div
                 key={p.id}
-                className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[#E2E8E4] bg-white p-4 shadow-xs"
+                className="rounded-2xl border border-[#E2E8E4] bg-white p-4 shadow-xs"
               >
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-base font-bold text-[#1F2933]">{p.title}</span>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                        p.isActive
-                          ? "bg-emerald-100 text-emerald-800"
-                          : "bg-stone-200 text-stone-600"
-                      }`}
-                    >
-                      {p.isActive ? "Active" : "Paused"}
-                    </span>
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    {p.imageUrls && p.imageUrls.length > 0 && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={p.imageUrls[0]}
+                        alt={p.title}
+                        className="h-14 w-14 rounded-xl border border-[#E2E8E4] object-cover"
+                      />
+                    )}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-base font-bold text-[#1F2933]">{p.title}</span>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                            p.isActive
+                              ? "bg-emerald-100 text-emerald-800"
+                              : "bg-stone-200 text-stone-600"
+                          }`}
+                        >
+                          {p.isActive ? "Active" : "Paused"}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-xs text-stone-500">
+                        {p.category} • Stock: <strong>{p.availableStockKg} kg</strong> • Min:{" "}
+                        {p.minOrderKg} kg • Base: ${p.basePricePerKg.toFixed(2)}/kg
+                      </p>
+                      {p.priceTiers.length > 0 && (
+                        <p className="mt-0.5 text-[11px] text-[#2D6A4F]">
+                          Tiers:{" "}
+                          {p.priceTiers
+                            .map((t) => `${t.minQuantityKg}+ kg @ $${t.pricePerKg.toFixed(2)}`)
+                            .join(" | ")}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                  <p className="mt-0.5 text-xs text-stone-500">
-                    {p.category} • Stock: <strong>{p.availableStockKg} kg</strong> • Base: $
-                    {p.basePricePerKg.toFixed(2)}/kg
-                  </p>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleAddStock(p, 25)}
+                      className="rounded-lg border border-[#D4DFD7] px-2.5 py-1 text-xs font-semibold hover:bg-[#E9F5EE]"
+                    >
+                      +25 kg
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => startEditing(p)}
+                      className="rounded-lg border border-[#1B4332] px-2.5 py-1 text-xs font-semibold text-[#1B4332] hover:bg-[#E9F5EE]"
+                    >
+                      {editingId === p.id ? "Close Edit" : "Edit"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleToggleActive(p)}
+                      className="rounded-lg border border-[#D4DFD7] px-2.5 py-1 text-xs font-semibold hover:bg-stone-100"
+                    >
+                      {p.isActive ? "Pause" : "Activate"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleDelete(p.id)}
+                      className="rounded-lg border border-red-200 px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-50"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void handleAddStock(p, 25)}
-                    className="rounded-lg border border-[#D4DFD7] px-2.5 py-1 text-xs font-semibold hover:bg-[#E9F5EE]"
-                  >
-                    +25 kg
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleToggleActive(p)}
-                    className="rounded-lg border border-[#D4DFD7] px-2.5 py-1 text-xs font-semibold hover:bg-stone-100"
-                  >
-                    {p.isActive ? "Pause" : "Activate"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleDelete(p.id)}
-                    className="rounded-lg border border-red-200 px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-50"
-                  >
-                    Delete
-                  </button>
-                </div>
+                {editingId === p.id && (
+                  <div className="mt-4 space-y-3 rounded-xl border border-[#DCE6DF] bg-[#FAF9F6] p-3.5 text-xs">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
+                      <label className="sm:col-span-2">
+                        <span className="font-semibold text-stone-700">Title</span>
+                        <input
+                          type="text"
+                          value={editTitle}
+                          onChange={(e) => setEditTitle(e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-[#D4DFD7] bg-white px-2.5 py-1.5"
+                        />
+                      </label>
+                      <label>
+                        <span className="font-semibold text-stone-700">Stock (kg)</span>
+                        <input
+                          type="number"
+                          step="0.5"
+                          value={editStockKg}
+                          onChange={(e) => setEditStockKg(e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-[#D4DFD7] bg-white px-2.5 py-1.5"
+                        />
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <label>
+                          <span className="font-semibold text-stone-700">Min (kg)</span>
+                          <input
+                            type="number"
+                            step="0.5"
+                            value={editMinOrderKg}
+                            onChange={(e) => setEditMinOrderKg(e.target.value)}
+                            className="mt-1 w-full rounded-lg border border-[#D4DFD7] bg-white px-2 py-1.5"
+                          />
+                        </label>
+                        <label>
+                          <span className="font-semibold text-stone-700">Base $/kg</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={editBasePrice}
+                            onChange={(e) => setEditBasePrice(e.target.value)}
+                            className="mt-1 w-full rounded-lg border border-[#D4DFD7] bg-white px-2 py-1.5"
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-[#1B4332]">Volume Price Tiers</span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setEditTiers((prev) => [...prev, { minKg: "", price: "" }])
+                          }
+                          className="font-semibold text-[#2D6A4F] hover:underline"
+                        >
+                          + Add Tier
+                        </button>
+                      </div>
+                      {editTiers.map((tier, idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            placeholder="Min kg"
+                            value={tier.minKg}
+                            onChange={(e) =>
+                              setEditTiers((prev) =>
+                                prev.map((r, i) =>
+                                  i === idx ? { ...r, minKg: e.target.value } : r
+                                )
+                              )
+                            }
+                            className="w-1/2 rounded-lg border border-[#D4DFD7] bg-white px-2.5 py-1"
+                          />
+                          <input
+                            type="number"
+                            step="0.01"
+                            placeholder="$/kg"
+                            value={tier.price}
+                            onChange={(e) =>
+                              setEditTiers((prev) =>
+                                prev.map((r, i) =>
+                                  i === idx ? { ...r, price: e.target.value } : r
+                                )
+                              )
+                            }
+                            className="w-1/2 rounded-lg border border-[#D4DFD7] bg-white px-2.5 py-1"
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditTiers((prev) => prev.filter((_, i) => i !== idx))
+                            }
+                            className="px-1.5 text-stone-400 hover:text-red-600"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setEditingId(null)}
+                        className="rounded-lg border border-[#D4DFD7] bg-white px-3 py-1.5 font-medium text-stone-600"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={savingEdit}
+                        onClick={() => void handleSaveEdit(p)}
+                        className="rounded-lg bg-[#1B4332] px-3.5 py-1.5 font-semibold text-white hover:bg-[#2D6A4F] disabled:opacity-50"
+                      >
+                        {savingEdit ? "Saving..." : "Save Changes"}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))
           )}

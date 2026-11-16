@@ -15,7 +15,15 @@ export default function OrdersPage() {
   const [repeatingId, setRepeatingId] = useState<string | null>(null);
   const [respondingId, setRespondingId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [disputeNotes, setDisputeNotes] = useState<Record<string, string>>({});
   const [payingOrderId, setPayingOrderId] = useState<string | null>(null);
+  const [invoiceGroup, setInvoiceGroup] = useState<CheckoutGroup | null>(null);
+
+  const [reconcilingOrderId, setReconcilingOrderId] = useState<string | null>(null);
+  const [reconcileDrafts, setReconcileDrafts] = useState<
+    Record<string, { actualKg: string; rejectedKg: string; proofUrl: string }[]>
+  >({});
+  const [savingReconcile, setSavingReconcile] = useState(false);
 
   const reload = useCallback(async () => {
     if (!user) return;
@@ -113,7 +121,8 @@ export default function OrdersPage() {
     setConfirmingId(orderId);
     setError(null);
     try {
-      await ordersApi.confirmReceipt(orderId, approve);
+      const note = disputeNotes[orderId]?.trim() || undefined;
+      await ordersApi.confirmReceipt(orderId, approve, note);
       await reload();
     } catch (err) {
       setError(
@@ -125,6 +134,46 @@ export default function OrdersPage() {
       );
     } finally {
       setConfirmingId(null);
+    }
+  }
+
+  function openFarmerReconcile(order: Order) {
+    if (reconcilingOrderId === order.id) {
+      setReconcilingOrderId(null);
+      return;
+    }
+    setReconcileDrafts((prev) => ({
+      ...prev,
+      [order.id]: order.items.map((item) => ({
+        actualKg: String(item.actualDeliveredWeightKg ?? item.estimatedWeightKg),
+        rejectedKg: String(item.rejectedWeightKg ?? 0),
+        proofUrl: item.proofPhotoUrl ?? "",
+      })),
+    }));
+    setReconcilingOrderId(order.id);
+  }
+
+  async function handleSubmitFarmerReconcile(order: Order) {
+    const drafts = reconcileDrafts[order.id];
+    if (!drafts || drafts.length !== order.items.length) return;
+    setSavingReconcile(true);
+    setError(null);
+    try {
+      await ordersApi.reconcile(
+        order.id,
+        order.items.map((item, idx) => ({
+          orderItemId: item.id,
+          actualDeliveredWeightKg: Number(drafts[idx].actualKg || 0),
+          rejectedWeightKg: Number(drafts[idx].rejectedKg || 0),
+          proofPhotoUrl: drafts[idx].proofUrl.trim() || undefined,
+        }))
+      );
+      setReconcilingOrderId(null);
+      await reload();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to reconcile delivery weights.");
+    } finally {
+      setSavingReconcile(false);
     }
   }
 
@@ -215,6 +264,11 @@ export default function OrdersPage() {
                     </div>
                   ))}
                 </div>
+                {order.disputeNote && (
+                  <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-2.5 text-xs text-red-800">
+                    <strong>Buyer Dispute Note:</strong> {order.disputeNote}
+                  </div>
+                )}
                 {order.status === "Pending" && (
                   <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-[#F0F3F1] pt-3">
                     <button
@@ -233,6 +287,95 @@ export default function OrdersPage() {
                     >
                       {respondingId === order.id ? "Updating..." : "Accept Order"}
                     </button>
+                  </div>
+                )}
+                {order.fulfillmentType === "FarmerDelivery" && order.status === "Confirmed" && (
+                  <div className="mt-4 border-t border-[#F0F3F1] pt-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-stone-600">
+                        Self-Delivery (FarmerDelivery) — record scale weights on handover:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => openFarmerReconcile(order)}
+                        className="rounded-lg border border-[#1B4332] px-3 py-1.5 text-xs font-semibold text-[#1B4332] hover:bg-[#E9F5EE]"
+                      >
+                        {reconcilingOrderId === order.id ? "Close Form" : "Reconcile Weights"}
+                      </button>
+                    </div>
+                    {reconcilingOrderId === order.id && reconcileDrafts[order.id] && (
+                      <div className="mt-3 space-y-2 rounded-xl border border-[#DCE6DF] bg-[#FAF9F6] p-3 text-xs">
+                        {order.items.map((item, idx) => (
+                          <div
+                            key={item.id}
+                            className="grid gap-2 rounded-lg border border-[#E2E8E4] bg-white p-2.5 sm:grid-cols-4"
+                          >
+                            <div>
+                              <p className="font-semibold text-[#1F2933]">
+                                {item.productTitleSnapshot}
+                              </p>
+                              <p className="text-stone-500">Est: {item.estimatedWeightKg} kg</p>
+                            </div>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              placeholder="Actual kg"
+                              value={reconcileDrafts[order.id][idx]?.actualKg ?? ""}
+                              onChange={(e) =>
+                                setReconcileDrafts((prev) => ({
+                                  ...prev,
+                                  [order.id]: prev[order.id].map((r, i) =>
+                                    i === idx ? { ...r, actualKg: e.target.value } : r
+                                  ),
+                                }))
+                              }
+                              className="rounded-lg border border-[#D4DFD7] px-2 py-1"
+                            />
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              placeholder="Rejected kg"
+                              value={reconcileDrafts[order.id][idx]?.rejectedKg ?? ""}
+                              onChange={(e) =>
+                                setReconcileDrafts((prev) => ({
+                                  ...prev,
+                                  [order.id]: prev[order.id].map((r, i) =>
+                                    i === idx ? { ...r, rejectedKg: e.target.value } : r
+                                  ),
+                                }))
+                              }
+                              className="rounded-lg border border-[#D4DFD7] px-2 py-1"
+                            />
+                            <input
+                              type="url"
+                              placeholder="Proof photo URL (optional)"
+                              value={reconcileDrafts[order.id][idx]?.proofUrl ?? ""}
+                              onChange={(e) =>
+                                setReconcileDrafts((prev) => ({
+                                  ...prev,
+                                  [order.id]: prev[order.id].map((r, i) =>
+                                    i === idx ? { ...r, proofUrl: e.target.value } : r
+                                  ),
+                                }))
+                              }
+                              className="rounded-lg border border-[#D4DFD7] px-2 py-1"
+                            />
+                          </div>
+                        ))}
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            disabled={savingReconcile}
+                            onClick={() => void handleSubmitFarmerReconcile(order)}
+                            className="rounded-lg bg-[#1B4332] px-3.5 py-1.5 font-semibold text-white hover:bg-[#2D6A4F] disabled:opacity-50"
+                          >
+                            {savingReconcile ? "Saving..." : "Submit Reconciled Weights"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -270,14 +413,23 @@ export default function OrdersPage() {
                     </p>
                   </div>
 
-                  <button
-                    type="button"
-                    disabled={repeatingId === group.id}
-                    onClick={() => void handleRepeat(group.id)}
-                    className="rounded-xl bg-[#1B4332] px-4 py-2 text-xs font-semibold text-white hover:bg-[#2D6A4F] disabled:opacity-60"
-                  >
-                    {repeatingId === group.id ? "Repeating..." : "1-Click Repeat Order"}
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setInvoiceGroup(group)}
+                      className="rounded-xl border border-[#1B4332] bg-white px-3.5 py-2 text-xs font-semibold text-[#1B4332] hover:bg-[#E9F5EE]"
+                    >
+                      Consolidated Invoice
+                    </button>
+                    <button
+                      type="button"
+                      disabled={repeatingId === group.id}
+                      onClick={() => void handleRepeat(group.id)}
+                      className="rounded-xl bg-[#1B4332] px-4 py-2 text-xs font-semibold text-white hover:bg-[#2D6A4F] disabled:opacity-60"
+                    >
+                      {repeatingId === group.id ? "Repeating..." : "1-Click Repeat Order"}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -373,6 +525,12 @@ export default function OrdersPage() {
                           <span>${order.finalTotalAmount.toFixed(2)}</span>
                         </div>
 
+                        {order.disputeNote && (
+                          <div className="mt-2 rounded-lg border border-red-200 bg-red-50 p-2 text-[11px] text-red-800">
+                            <strong>Dispute Note:</strong> {order.disputeNote}
+                          </div>
+                        )}
+
                         {canBuyerConfirm && (
                           <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-2.5">
                             <p className="font-semibold text-amber-900">
@@ -380,6 +538,20 @@ export default function OrdersPage() {
                                 ? "Order disputed — approve updated weight once resolved."
                                 : "Weight variance (> ±10%) or rejected produce requires buyer sign-off."}
                             </p>
+                            {order.status === "DeliveredPendingApproval" && (
+                              <input
+                                type="text"
+                                placeholder="Reason for dispute (optional if approving, e.g. 3kg bruised)"
+                                value={disputeNotes[order.id] ?? ""}
+                                onChange={(e) =>
+                                  setDisputeNotes((prev) => ({
+                                    ...prev,
+                                    [order.id]: e.target.value,
+                                  }))
+                                }
+                                className="mt-2 w-full rounded-lg border border-amber-300 bg-white px-2.5 py-1.5 text-xs focus:border-[#1B4332] focus:outline-none"
+                              />
+                            )}
                             <div className="mt-2 flex flex-wrap gap-2">
                               <button
                                 type="button"
@@ -457,6 +629,162 @@ export default function OrdersPage() {
               </section>
             );
           })}
+        </div>
+      )}
+
+      {/* Consolidated B2B Invoice Modal */}
+      {invoiceGroup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-[#DCE6DF] bg-white p-6 shadow-xl">
+            <div className="flex items-start justify-between border-b border-[#E2E8E4] pb-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-[#2D6A4F]">
+                  AgroMarket B2B Consolidated Statement
+                </p>
+                <h2 className="mt-1 text-xl font-bold text-[#1B4332]">
+                  Invoice #{invoiceGroup.id.slice(0, 8).toUpperCase()}
+                </h2>
+                <p className="mt-0.5 text-xs text-stone-500">
+                  Scheduled Delivery: {invoiceGroup.scheduledDeliveryDate} • Issued{" "}
+                  {new Date(invoiceGroup.createdAt).toLocaleDateString()}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="rounded-lg bg-[#1B4332] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#2D6A4F]"
+                >
+                  Print / Save PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInvoiceGroup(null)}
+                  className="rounded-lg border border-[#D4DFD7] px-3 py-1.5 text-xs font-semibold text-stone-700 hover:bg-stone-100"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-4 rounded-xl bg-[#F7FAF8] p-4 text-xs sm:grid-cols-2">
+              <div>
+                <p className="font-semibold text-[#1B4332]">Bill To (Restaurant Buyer)</p>
+                <p className="mt-1 font-bold text-[#1F2933]">
+                  {invoiceGroup.restaurantName ??
+                    invoiceGroup.orders[0]?.restaurantName ??
+                    "Restaurant Buyer"}
+                </p>
+                {(invoiceGroup.restaurantTaxId ?? invoiceGroup.orders[0]?.restaurantTaxId) && (
+                  <p className="text-stone-600">
+                    Tax ID (VOEN):{" "}
+                    {invoiceGroup.restaurantTaxId ?? invoiceGroup.orders[0]?.restaurantTaxId}
+                  </p>
+                )}
+                <p className="text-stone-600">Address: {invoiceGroup.deliveryAddress}</p>
+              </div>
+              <div className="sm:text-right">
+                <p className="font-semibold text-[#1B4332]">Settlement Summary</p>
+                <p className="mt-1 text-stone-600">
+                  Method: <strong>{invoiceGroup.orders[0]?.paymentMethod ?? "COD"}</strong>
+                </p>
+                <p className="text-stone-600">
+                  Active Farm Sub-Orders:{" "}
+                  <strong>
+                    {invoiceGroup.orders.filter((o) => o.status !== "Cancelled").length}
+                  </strong>
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              {invoiceGroup.orders
+                .filter((o) => o.status !== "Cancelled")
+                .map((order) => (
+                  <div
+                    key={order.id}
+                    className="rounded-xl border border-[#E2E8E4] p-3.5 text-xs"
+                  >
+                    <div className="flex flex-wrap items-center justify-between border-b border-[#F0F3F1] pb-2">
+                      <div>
+                        <span className="font-bold text-[#1F2933]">
+                          Supplier: {order.farmerName ?? "Verified Farm"}
+                        </span>
+                        {order.farmerTaxId && (
+                          <span className="ml-2 text-stone-500">
+                            (VOEN: {order.farmerTaxId})
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-stone-500">
+                        Order #{order.id.slice(0, 8)} • {order.status} ({order.paymentStatus})
+                      </span>
+                    </div>
+
+                    <table className="mt-2 w-full text-left">
+                      <thead className="text-[11px] uppercase text-stone-500">
+                        <tr>
+                          <th className="py-1">Item</th>
+                          <th className="py-1 text-right">Est / Chargeable kg</th>
+                          <th className="py-1 text-right">Unit Price</th>
+                          <th className="py-1 text-right">Line Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#F0F3F1]">
+                        {order.items.map((item) => {
+                          const hasActual = item.actualDeliveredWeightKg !== null;
+                          const chargeableKg = hasActual
+                            ? Math.max(
+                                0,
+                                (item.actualDeliveredWeightKg ?? 0) -
+                                  (item.rejectedWeightKg ?? 0)
+                              )
+                            : item.estimatedWeightKg;
+                          return (
+                            <tr key={item.id}>
+                              <td className="py-1.5 font-medium text-[#1F2933]">
+                                {item.productTitleSnapshot}
+                              </td>
+                              <td className="py-1.5 text-right text-stone-600">
+                                {item.estimatedWeightKg} kg →{" "}
+                                <strong>{chargeableKg.toFixed(2)} kg</strong>
+                              </td>
+                              <td className="py-1.5 text-right text-stone-600">
+                                ${item.unitPriceApplied.toFixed(2)}/kg
+                              </td>
+                              <td className="py-1.5 text-right font-semibold">
+                                ${(chargeableKg * item.unitPriceApplied).toFixed(2)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+
+                    <div className="mt-2 flex flex-wrap justify-between border-t border-[#F0F3F1] pt-2 text-[11px] text-stone-600">
+                      <span>
+                        Platform Fee: ${order.platformFeeAmount.toFixed(2)} • Split Delivery Fee: $
+                        {order.deliveryFeeAmount.toFixed(2)}
+                      </span>
+                      <span className="font-bold text-[#1B4332]">
+                        Sub-Order Total: ${order.finalTotalAmount.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+            </div>
+
+            <div className="mt-5 flex items-center justify-between border-t border-[#DCE6DF] pt-4 text-base font-bold text-[#1B4332]">
+              <span>Consolidated Grand Total</span>
+              <span>
+                $
+                {invoiceGroup.orders
+                  .filter((o) => o.status !== "Cancelled")
+                  .reduce((sum, o) => sum + o.finalTotalAmount, 0)
+                  .toFixed(2)}
+              </span>
+            </div>
+          </div>
         </div>
       )}
     </div>

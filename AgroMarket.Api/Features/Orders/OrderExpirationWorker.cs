@@ -1,5 +1,6 @@
 using AgroMarket.Api.Database;
 using AgroMarket.Api.Database.Entities;
+using AgroMarket.Api.Infrastructure.Notifications;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -24,7 +25,8 @@ public sealed class OrderExpirationWorker(
                 await timer.WaitForNextTickAsync(stoppingToken);
                 using var scope = scopeFactory.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                var released = await ReleaseExpiredOrdersAsync(db, stoppingToken);
+                var notifier = scope.ServiceProvider.GetService<ITelegramNotifier>();
+                var released = await ReleaseExpiredOrdersAsync(db, stoppingToken, notifier);
                 if (released > 0)
                 {
                     logger.LogInformation("Released stock for {Count} expired pending orders.", released);
@@ -43,7 +45,8 @@ public sealed class OrderExpirationWorker(
 
     public static async Task<int> ReleaseExpiredOrdersAsync(
         AppDbContext db,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ITelegramNotifier? telegramNotifier = null)
     {
         var now = DateTimeOffset.UtcNow;
 
@@ -65,6 +68,9 @@ public sealed class OrderExpirationWorker(
 
                 var order = await db.Orders
                     .Include(o => o.Items)
+                    .Include(o => o.Farmer)
+                        .ThenInclude(f => f.BusinessProfile)
+                    .Include(o => o.Restaurant)
                     .FirstOrDefaultAsync(o => o.Id == orderId, cancellationToken);
 
                 if (order is null || order.Status != OrderStatus.Pending || order.ExpiresAt > DateTimeOffset.UtcNow)
@@ -95,6 +101,18 @@ public sealed class OrderExpirationWorker(
                     await db.SaveChangesAsync(cancellationToken);
                     await tx.CommitAsync(cancellationToken);
                     releasedCount++;
+
+                    if (telegramNotifier is not null && order.Restaurant?.TelegramChatId is { } restaurantChatId)
+                    {
+                        var farmerName = order.Farmer?.BusinessProfile?.BusinessName ?? order.Farmer?.FullName ?? "Farmer";
+                        await telegramNotifier.NotifyRestaurantOrderStatusAsync(
+                            order,
+                            restaurantChatId,
+                            farmerName,
+                            "Order expired because the farm did not confirm before the cutoff window. Stock was released.",
+                            cancellationToken);
+                    }
+
                     break;
                 }
                 catch (DbUpdateConcurrencyException)

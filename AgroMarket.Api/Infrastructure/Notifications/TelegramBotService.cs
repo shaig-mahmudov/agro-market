@@ -8,6 +8,7 @@ namespace AgroMarket.Api.Infrastructure.Notifications;
 public interface ITelegramNotifier
 {
     Task NotifyFarmerNewOrderAsync(Order order, long chatId, string restaurantName, CancellationToken cancellationToken);
+    Task NotifyRestaurantOrderStatusAsync(Order order, long chatId, string farmerName, string messageText, CancellationToken cancellationToken);
     Task SendTextAsync(long chatId, string text, CancellationToken cancellationToken);
     Task AnswerCallbackQueryAsync(string callbackQueryId, string text, CancellationToken cancellationToken);
 }
@@ -64,6 +65,22 @@ public sealed class TelegramBotService(
         };
 
         await PostBotMethodAsync("sendMessage", payload, cancellationToken);
+    }
+
+    public async Task NotifyRestaurantOrderStatusAsync(
+        Order order,
+        long chatId,
+        string farmerName,
+        string messageText,
+        CancellationToken cancellationToken)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"AgroMarket Order #{order.Id.ToString()[..8]} Update");
+        sb.AppendLine($"Farm: {farmerName}");
+        sb.AppendLine($"Status: {order.Status}");
+        sb.AppendLine(messageText);
+
+        await SendTextAsync(chatId, sb.ToString(), cancellationToken);
     }
 
     public async Task SendTextAsync(long chatId, string text, CancellationToken cancellationToken)

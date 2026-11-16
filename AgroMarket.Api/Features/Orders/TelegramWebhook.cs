@@ -128,7 +128,8 @@ public static class TelegramWebhook
                     isAdmin: false,
                     accept,
                     db,
-                    cancellationToken);
+                    cancellationToken,
+                    notifier);
 
                 var replyText = result.Result is Ok<OrderDto>
                     ? (accept ? "Order accepted for morning pickup!" : "Order rejected and stock restored.")

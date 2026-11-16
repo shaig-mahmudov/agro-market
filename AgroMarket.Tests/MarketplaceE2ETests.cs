@@ -212,6 +212,7 @@ public sealed class MarketplaceE2ETests : IClassFixture<PostgresWebAppFactory>
         var disputed = (await dispResp.Content.ReadFromJsonAsync<OrderDto>(PostgresWebAppFactory.JsonOptions))!;
         Assert.Equal(OrderStatus.Disputed, disputed.Status);
         Assert.Equal(PaymentStatus.Disputed, disputed.PaymentStatus);
+        Assert.Equal("Damaged crate", disputed.DisputeNote);
 
         var confResp = await restClient.PatchAsJsonAsync($"/api/orders/{order.Id}/confirm", new ConfirmReceipt.Request(true), PostgresWebAppFactory.JsonOptions);
         confResp.EnsureSuccessStatusCode();

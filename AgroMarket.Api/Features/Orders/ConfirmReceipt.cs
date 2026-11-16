@@ -67,6 +67,10 @@ public static class ConfirmReceipt
         {
             order.Status = OrderStatus.Delivered;
             order.DeliveredAt ??= DateTimeOffset.UtcNow;
+            if (!string.IsNullOrWhiteSpace(request.DisputeNote))
+            {
+                order.DisputeNote = request.DisputeNote.Trim();
+            }
             if (order.PaymentStatus == PaymentStatus.Disputed)
             {
                 order.PaymentStatus = PaymentStatus.Unpaid;
@@ -77,6 +81,9 @@ public static class ConfirmReceipt
             order.Status = OrderStatus.Disputed;
             order.DeliveredAt = null;
             order.PaymentStatus = PaymentStatus.Disputed;
+            order.DisputeNote = string.IsNullOrWhiteSpace(request.DisputeNote)
+                ? null
+                : request.DisputeNote.Trim();
         }
 
         await db.SaveChangesAsync(cancellationToken);

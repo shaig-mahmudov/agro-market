@@ -3,6 +3,7 @@ using AgroMarket.Api.Common;
 using AgroMarket.Api.Database;
 using AgroMarket.Api.Database.Entities;
 using AgroMarket.Api.Features.Products;
+using AgroMarket.Api.Infrastructure.Notifications;
 using AgroMarket.Api.Infrastructure.Storage;
 using FluentValidation;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -70,6 +71,7 @@ public static class ReconcileDelivery
         ClaimsPrincipal principal,
         AppDbContext db,
         IOptions<MarketplaceOptions> options,
+        ITelegramNotifier telegramNotifier,
         CancellationToken cancellationToken)
     {
         var userId = principal.GetUserId();
@@ -218,6 +220,20 @@ public static class ReconcileDelivery
                 title: "Concurrent stock update",
                 detail: "Product stock changed while reconciling delivery. Please retry.",
                 statusCode: StatusCodes.Status409Conflict);
+        }
+
+        if (order.Restaurant?.TelegramChatId is { } restaurantChatId)
+        {
+            var farmerName = order.Farmer?.BusinessProfile?.BusinessName ?? order.Farmer?.FullName ?? "Farmer";
+            var summary = needsBuyerApproval
+                ? $"Delivery reconciled (${order.FinalTotalAmount:F2}) with weight variance > ±10% or rejected items. Please review and approve/dispute in AgroMarket."
+                : $"Delivery completed (${order.FinalTotalAmount:F2}) within ±10% tolerance.";
+            await telegramNotifier.NotifyRestaurantOrderStatusAsync(
+                order,
+                restaurantChatId,
+                farmerName,
+                summary,
+                cancellationToken);
         }
 
         return TypedResults.Ok(OrderMappings.ToOrderDto(order));

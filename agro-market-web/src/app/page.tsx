@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { ordersApi, productsApi, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { computeEffectiveUnitPrice, useCart } from "@/lib/cart";
-import type { PaymentMethod, Product } from "@/lib/types";
+import type { FulfillmentType, PaymentMethod, Product } from "@/lib/types";
 
 const CATEGORIES = ["", "Tomatoes", "Cucumbers", "Potatoes", "Greens", "Fruits", "Onions"];
 
@@ -17,6 +17,9 @@ export default function CatalogPage() {
     useCart();
 
   const [products, setProducts] = useState<Product[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,6 +30,8 @@ export default function CatalogPage() {
 
   const [qtyInputs, setQtyInputs] = useState<Record<string, number>>({});
   const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [scheduledDeliveryDate, setScheduledDeliveryDate] = useState("");
+  const [fulfillmentType, setFulfillmentType] = useState<FulfillmentType>("PlatformCourier");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CashOnDelivery");
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [checkingOut, setCheckingOut] = useState(false);
@@ -42,6 +47,8 @@ export default function CatalogPage() {
       await ordersApi.checkout({
         items: items.map((i) => ({ productId: i.product.id, weightKg: i.quantityKg })),
         deliveryAddress: deliveryAddress.trim() || undefined,
+        scheduledDeliveryDate: scheduledDeliveryDate || undefined,
+        fulfillmentType,
         paymentMethod,
       });
       clearCart();
@@ -61,10 +68,14 @@ export default function CatalogPage() {
         region: region || undefined,
         search: search || undefined,
         isOrganic: isOrganic || undefined,
+        page,
+        pageSize: 12,
       })
       .then((res) => {
         if (!active) return;
         setProducts(res.items);
+        setTotalPages(Math.max(1, res.totalPages));
+        setTotalCount(res.totalCount);
         setError(null);
         setQtyInputs((prev) => {
           const next = { ...prev };
@@ -86,7 +97,7 @@ export default function CatalogPage() {
     return () => {
       active = false;
     };
-  }, [category, region, search, isOrganic]);
+  }, [category, region, search, isOrganic, page]);
 
   return (
     <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
@@ -123,21 +134,30 @@ export default function CatalogPage() {
               type="text"
               placeholder="Search tomatoes, farm..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
               className="rounded-xl border border-[#D4DFD7] px-3 py-2 text-sm focus:border-[#1B4332] focus:outline-none sm:col-span-2"
             />
             <input
               type="text"
               placeholder="Region (e.g. Quba, Zira)"
               value={region}
-              onChange={(e) => setRegion(e.target.value)}
+              onChange={(e) => {
+                setRegion(e.target.value);
+                setPage(1);
+              }}
               className="rounded-xl border border-[#D4DFD7] px-3 py-2 text-sm focus:border-[#1B4332] focus:outline-none"
             />
             <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-[#D4DFD7] px-3 py-2 text-sm">
               <input
                 type="checkbox"
                 checked={isOrganic}
-                onChange={(e) => setIsOrganic(e.target.checked)}
+                onChange={(e) => {
+                  setIsOrganic(e.target.checked);
+                  setPage(1);
+                }}
                 className="h-4 w-4 accent-[#1B4332]"
               />
               <span>Organic only</span>
@@ -149,7 +169,10 @@ export default function CatalogPage() {
               <button
                 key={cat || "all"}
                 type="button"
-                onClick={() => setCategory(cat)}
+                onClick={() => {
+                  setCategory(cat);
+                  setPage(1);
+                }}
                 className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                   category === cat
                     ? "bg-[#1B4332] text-white"
@@ -207,6 +230,16 @@ export default function CatalogPage() {
                   className="flex flex-col justify-between rounded-2xl border border-[#E2E8E4] bg-white p-5 shadow-xs transition-shadow hover:shadow-md"
                 >
                   <div>
+                    {product.imageUrls && product.imageUrls.length > 0 && (
+                      <div className="mb-3 overflow-hidden rounded-xl border border-[#E2E8E4] bg-[#F7FAF8]">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={product.imageUrls[0]}
+                          alt={product.title}
+                          className="h-36 w-full object-cover"
+                        />
+                      </div>
+                    )}
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <span className="inline-block rounded-full bg-[#E9F5EE] px-2.5 py-0.5 text-[11px] font-semibold text-[#1B4332]">
@@ -309,6 +342,32 @@ export default function CatalogPage() {
                 </article>
               );
             })}
+          </div>
+        )}
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between rounded-2xl border border-[#E2E8E4] bg-white px-4 py-3 text-xs">
+            <span className="text-stone-600">
+              Page <strong>{page}</strong> of <strong>{totalPages}</strong> ({totalCount} listings)
+            </span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="rounded-lg border border-[#D4DFD7] px-3 py-1.5 font-semibold text-[#1B4332] disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="rounded-lg border border-[#D4DFD7] px-3 py-1.5 font-semibold text-[#1B4332] disabled:opacity-40"
+              >
+                Next
+              </button>
+            </div>
           </div>
         )}
       </section>
@@ -416,6 +475,34 @@ export default function CatalogPage() {
                     placeholder="Use saved Business Profile address"
                     className="mt-1 w-full rounded-xl border border-[#D4DFD7] px-3 py-2 text-xs"
                   />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-stone-700">
+                      Fulfillment
+                    </label>
+                    <select
+                      value={fulfillmentType}
+                      onChange={(e) => setFulfillmentType(e.target.value as FulfillmentType)}
+                      className="mt-1 w-full rounded-xl border border-[#D4DFD7] bg-white px-2.5 py-2 text-xs"
+                    >
+                      <option value="PlatformCourier">Morning Milk-Run</option>
+                      <option value="FarmerDelivery">Farmer Delivery</option>
+                      <option value="BuyerPickup">Buyer Pickup ($0 fee)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-stone-700">
+                      Delivery Date
+                    </label>
+                    <input
+                      type="date"
+                      value={scheduledDeliveryDate}
+                      onChange={(e) => setScheduledDeliveryDate(e.target.value)}
+                      className="mt-1 w-full rounded-xl border border-[#D4DFD7] px-2.5 py-2 text-xs"
+                    />
+                  </div>
                 </div>
 
                 <div>
