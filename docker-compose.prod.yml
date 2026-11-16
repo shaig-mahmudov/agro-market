@@ -60,32 +60,20 @@ services:
       R2__SecretAccessKey: ${R2__SecretAccessKey:-}
       R2__BucketName: ${R2__BucketName:-agromarket-media}
       R2__PublicBaseUrl: ${R2__PublicBaseUrl:-}
-      Cors__AllowedOrigins__0: ${CORS_ORIGIN:-https://localhost}
+      Cors__AllowedOrigins: ${CORS_ORIGIN:-https://localhost}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
 
-  web:
-    build:
-      context: ./agro-market-web
-      dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
-    container_name: agromarket-web-prod
-    restart: unless-stopped
-    depends_on:
-      api:
-        condition: service_healthy
-
   caddy:
     image: caddy:2-alpine
     container_name: agromarket-caddy
     restart: unless-stopped
     depends_on:
-      - api
-      - web
+      api:
+        condition: service_healthy
     ports:
       - "80:80"
       - "443:443"
