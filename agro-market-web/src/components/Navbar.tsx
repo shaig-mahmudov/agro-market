@@ -6,14 +6,22 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { useCart } from "@/lib/cart";
 
+const rawBasePath = process.env.NEXT_PUBLIC_BASE_PATH?.trim() || "";
+const BASE_PATH =
+  rawBasePath && rawBasePath !== "/"
+    ? `${rawBasePath.startsWith("/") ? "" : "/"}${rawBasePath.replace(/\/+$/, "")}`
+    : "";
+
 export function Navbar() {
   const pathname = usePathname();
+  const normalizedPathname =
+    pathname && pathname !== "/" ? pathname.replace(/\/+$/, "") : "/";
   const { user, logout } = useAuth();
   const { items, totalKg } = useCart();
 
   const navLinkClass = (href: string) =>
     `px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-      pathname === href
+      normalizedPathname === href
         ? "bg-[#1B4332] text-white"
         : "text-[#1F2933] hover:bg-[#E9F5EE]"
     }`;
@@ -23,7 +31,7 @@ export function Navbar() {
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
         <div className="flex items-center gap-6">
           <Link href="/" className="flex items-center gap-2.5">
-            <Image src="/icon.svg" alt="AgroMarket" width={32} height={32} className="rounded-lg" />
+            <Image src={`${BASE_PATH}/icon.svg`} alt="AgroMarket" width={32} height={32} className="rounded-lg" />
             <div>
               <span className="text-lg font-bold tracking-tight text-[#1B4332]">
                 AgroMarket

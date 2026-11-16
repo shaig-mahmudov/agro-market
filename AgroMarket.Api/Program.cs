@@ -38,12 +38,35 @@ builder.Services.AddOpenApi();
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 builder.Services.AddAgroMarketRateLimiting();
 
-var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+var configuredOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+var flatOrigins = builder.Configuration.GetValue<string>("Cors:AllowedOrigins");
+var allowedOrigins = configuredOrigins
+    .Concat(
+        string.IsNullOrWhiteSpace(flatOrigins)
+            ? []
+            : flatOrigins.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+    .Select(origin =>
+    {
+        var trimmed = origin.Trim().TrimEnd('/');
+        return Uri.TryCreate(trimmed, UriKind.Absolute, out var uri)
+            ? $"{uri.Scheme}://{uri.Authority}"
+            : trimmed;
+    })
+    .Where(origin => !string.IsNullOrWhiteSpace(origin))
+    .Distinct(StringComparer.OrdinalIgnoreCase)
+    .ToArray();
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>
     {
-        if (allowedOrigins.Length > 0)
+        if (allowedOrigins.Contains("*"))
+        {
+            policy.AllowAnyOrigin()
+                  .AllowAnyHeader()
+                  .AllowAnyMethod();
+        }
+        else if (allowedOrigins.Length > 0)
         {
             policy.WithOrigins(allowedOrigins)
                   .AllowAnyHeader()

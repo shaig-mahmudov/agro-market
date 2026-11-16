@@ -2,11 +2,17 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Providers } from "@/components/Providers";
 
+const rawBasePath = process.env.NEXT_PUBLIC_BASE_PATH?.trim() || "";
+const basePath =
+  rawBasePath && rawBasePath !== "/"
+    ? `${rawBasePath.startsWith("/") ? "" : "/"}${rawBasePath.replace(/\/+$/, "")}`
+    : "";
+
 export const metadata: Metadata = {
   title: "AgroMarket — B2B Direct Agri-Marketplace",
   description:
     "Farm-gate produce procurement for restaurants and cafes with managed morning milk-run delivery.",
-  manifest: "/manifest.webmanifest",
+  manifest: `${basePath}/manifest.webmanifest`,
 };
 
 export const viewport: Viewport = {
