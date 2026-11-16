@@ -50,6 +50,10 @@ services:
       Jwt__Issuer: ${Jwt__Issuer:-AgroMarket.Api}
       Jwt__Audience: ${Jwt__Audience:-AgroMarket.Clients}
       Jwt__SigningKey: ${Jwt__SigningKey:-CHANGE_ME_TO_A_SECURE_64_CHAR_RANDOM_SECRET_KEY_FOR_LOCAL_DEV_ONLY}
+      Seed__Enabled: ${SEED_ENABLED:-true}
+      Seed__SeedSampleData: ${SEED_SAMPLE_DATA:-true}
+      Auth__EnableBootstrapDemoOtp: ${ENABLE_BOOTSTRAP_DEMO_OTP:-true}
+      Auth__BootstrapOtpCode: ${BOOTSTRAP_OTP_CODE:-123456}
       Cors__AllowedOrigins: ${CORS_ORIGIN:-http://localhost:3000}
     ports:
       - "${API_PORT:-5000}:8080"

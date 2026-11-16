@@ -1,13 +1,32 @@
 using AgroMarket.Api.Common;
+using AgroMarket.Api.Database;
+using AgroMarket.Api.Infrastructure.Auth;
+using Microsoft.Extensions.Options;
 
 namespace AgroMarket.Api.Features.Auth;
 
 public static class AuthEndpoints
 {
+    public sealed record BootstrapAccountsResponse(
+        bool DemoOtpEnabled,
+        string? DemoOtpCode,
+        IReadOnlyList<BootstrapAccountInfo> Accounts);
+
     public static IEndpointRouteBuilder MapAuthEndpoints(this IEndpointRouteBuilder api)
     {
         var group = api.MapGroup("/auth")
             .WithTags("Auth");
+
+        group.MapGet("/bootstrap-accounts", (IOptions<AuthBootstrapOptions> bootstrapOptions) =>
+        {
+            var opts = bootstrapOptions.Value;
+            return TypedResults.Ok(new BootstrapAccountsResponse(
+                opts.EnableBootstrapDemoOtp,
+                opts.EnableBootstrapDemoOtp ? opts.BootstrapOtpCode : null,
+                DatabaseSeeder.DefaultBootstrapAccounts));
+        })
+        .WithName("GetBootstrapAccounts")
+        .WithSummary("List pre-seeded bootstrap/demo accounts across Admin, Farmer, Restaurant, and Driver roles");
 
         group.MapPost("/send-otp", SendOtp.Handle)
             .RequireRateLimiting(RateLimitPolicies.OtpSend)

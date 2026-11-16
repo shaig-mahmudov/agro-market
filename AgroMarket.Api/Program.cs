@@ -87,12 +87,14 @@ builder.Services.AddHealthChecks()
 
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
 builder.Services.Configure<AuthBootstrapOptions>(builder.Configuration.GetSection(AuthBootstrapOptions.SectionName));
+builder.Services.Configure<SeedOptions>(builder.Configuration.GetSection(SeedOptions.SectionName));
 builder.Services.Configure<OtpOptions>(builder.Configuration.GetSection(OtpOptions.SectionName));
 builder.Services.Configure<TelegramOptions>(builder.Configuration.GetSection(TelegramOptions.SectionName));
 builder.Services.Configure<R2Options>(builder.Configuration.GetSection(R2Options.SectionName));
 builder.Services.Configure<MarketplaceOptions>(builder.Configuration.GetSection(MarketplaceOptions.SectionName));
 builder.Services.AddSingleton<IObjectStorageService, R2ObjectStorageService>();
 builder.Services.AddHttpClient<ITelegramNotifier, TelegramBotService>();
+builder.Services.AddHostedService<DatabaseSeedHostedService>();
 builder.Services.AddHostedService<OrderExpirationWorker>();
 
 var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();

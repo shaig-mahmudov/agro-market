@@ -37,7 +37,26 @@ Once running locally in Development:
 - Frontend PWA: `http://localhost:3000`
 - Health check: `GET /health`
 - Ping endpoint: `GET /api/ping`
+- Bootstrap accounts endpoint: `GET /api/auth/bootstrap-accounts`
 - Scalar API Reference: `GET /scalar/v1`
+
+## Bootstrap Accounts & Sample Data
+
+On startup (`Seed:Enabled = true`), `DatabaseSeedHostedService` idempotently seeds **9 bootstrap accounts** (with `BusinessProfiles`), **9 tiered produce listings** across 3 verified farms, **3 multi-farmer `CheckoutGroups` (6 split `Orders`)**, and **2 morning Milk-Run `DeliveryRuns`**.
+
+All bootstrap accounts can sign in using Demo OTP code **`123456`** (when `Auth:EnableBootstrapDemoOtp = true`):
+
+| Role | Phone Number (E.164) | Full Name | Business Name | Region | Verified |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Admin** | `+994500000000` | Platform Admin | AgroMarket Operations HQ | Baku | Yes |
+| **Farmer** | `+994501111111` | Rashad Aliyev | Guba Highland Orchards | Guba-Khachmaz | Yes |
+| **Farmer** | `+994501111112` | Farid Hasanov | Lankaran Citrus & Subtropics | Lankaran-Astara | Yes |
+| **Farmer** | `+994501111113` | Aysel Mammadova | Zira Eco Greenhouses | Absheron | Yes |
+| **Farmer** | `+994501111114` | Kamran Babayev | Sheki Walnut & Orchard Co. | Sheki-Zagatala | No *(Pending)* |
+| **Restaurant** | `+994502222221` | Leyla Mammadova | Caspian Bistro & Grill | Baku | Yes |
+| **Restaurant** | `+994502222222` | Orkhan Guliyev | Icherisheher Courtyard Kitchen | Baku | Yes |
+| **Restaurant** | `+994502222223` | Nigar Karimova | Port Baku Artisan Cafe | Baku | No *(Pending)* |
+| **Driver** | `+994503333331` | Elchin Mustafayev | Baku Cold-Chain Fleet | Baku | Yes |
 
 ## Implementation Roadmap (Incremental Tasks)
 

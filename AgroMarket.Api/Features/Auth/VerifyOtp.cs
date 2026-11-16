@@ -118,23 +118,62 @@ public static class VerifyOtp
         var isNewUser = user is null;
         if (user is null)
         {
+            var preset = DatabaseSeeder.DefaultBootstrapAccounts
+                .FirstOrDefault(a => PhoneNumberNormalizer.Normalize(a.PhoneNumber) == normalizedPhone);
+
             var isBootstrapAdmin = bootstrapOptions.Value.BootstrapAdminPhones
                 .Select(PhoneNumberNormalizer.Normalize)
                 .Contains(normalizedPhone, StringComparer.Ordinal);
+            var isBootstrapFarmer = bootstrapOptions.Value.BootstrapFarmerPhones
+                .Select(PhoneNumberNormalizer.Normalize)
+                .Contains(normalizedPhone, StringComparer.Ordinal);
+            var isBootstrapRestaurant = bootstrapOptions.Value.BootstrapRestaurantPhones
+                .Select(PhoneNumberNormalizer.Normalize)
+                .Contains(normalizedPhone, StringComparer.Ordinal);
+            var isBootstrapDriver = bootstrapOptions.Value.BootstrapDriverPhones
+                .Select(PhoneNumberNormalizer.Normalize)
+                .Contains(normalizedPhone, StringComparer.Ordinal);
+
+            var resolvedRole = preset?.Role
+                ?? (isBootstrapAdmin ? UserRole.Admin
+                    : isBootstrapDriver ? UserRole.Driver
+                    : isBootstrapFarmer ? UserRole.Farmer
+                    : isBootstrapRestaurant ? UserRole.Restaurant
+                    : (request.Role ?? UserRole.Restaurant));
+
+            var resolvedVerified = preset?.IsVerified
+                ?? (isBootstrapAdmin || isBootstrapDriver || isBootstrapFarmer || isBootstrapRestaurant);
+
+            var resolvedFullName = !string.IsNullOrWhiteSpace(request.FullName)
+                ? request.FullName.Trim()
+                : (preset?.FullName ?? normalizedPhone);
 
             user = new User
             {
-                Id = Guid.NewGuid(),
+                Id = preset?.Id ?? Guid.NewGuid(),
                 PhoneNumber = normalizedPhone,
-                FullName = string.IsNullOrWhiteSpace(request.FullName)
-                    ? normalizedPhone
-                    : request.FullName.Trim(),
-                Role = isBootstrapAdmin ? UserRole.Admin : (request.Role ?? UserRole.Restaurant),
-                IsVerified = isBootstrapAdmin,
+                FullName = resolvedFullName,
+                Role = resolvedRole,
+                IsVerified = resolvedVerified,
                 CreatedAt = now
             };
 
             db.Users.Add(user);
+
+            if (preset is not null)
+            {
+                db.BusinessProfiles.Add(new BusinessProfile
+                {
+                    UserId = user.Id,
+                    BusinessName = preset.BusinessName,
+                    Region = preset.Region,
+                    Address = preset.Address,
+                    Latitude = preset.Latitude,
+                    Longitude = preset.Longitude,
+                    PreferredDeliveryWindow = preset.PreferredDeliveryWindow,
+                    TaxId = preset.TaxId
+                });
+            }
         }
         else if (!string.IsNullOrWhiteSpace(request.FullName) && user.FullName == user.PhoneNumber)
         {

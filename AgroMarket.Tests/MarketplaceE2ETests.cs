@@ -221,6 +221,59 @@ public sealed class MarketplaceE2ETests : IClassFixture<PostgresWebAppFactory>
         Assert.Equal(PaymentStatus.Unpaid, confirmed.PaymentStatus);
     }
 
+    [Fact]
+    public async Task BootstrapAccounts_AndSampleData_AreSeededAndAccessibleByAllRoles()
+    {
+        using var anonClient = _factory.CreateClient();
+
+        // 1. Bootstrap accounts endpoint lists all 9 pre-seeded accounts and demo OTP code
+        var bootstrapResp = await anonClient.GetFromJsonAsync<AuthEndpoints.BootstrapAccountsResponse>(
+            "/api/auth/bootstrap-accounts",
+            PostgresWebAppFactory.JsonOptions);
+        Assert.NotNull(bootstrapResp);
+        Assert.True(bootstrapResp.DemoOtpEnabled);
+        Assert.Equal("123456", bootstrapResp.DemoOtpCode);
+        Assert.Equal(9, bootstrapResp.Accounts.Count);
+
+        // 2. Public catalog includes the 9 seeded farmer products
+        var catalog = await anonClient.GetFromJsonAsync<AgroMarket.Api.Common.PagedResult<ProductDto>>(
+            "/api/products?pageSize=50",
+            PostgresWebAppFactory.JsonOptions);
+        Assert.NotNull(catalog);
+        Assert.True(catalog.TotalCount >= 9);
+        Assert.Contains(catalog.Items, p => p.Title == "Zira Pink Beefsteak Tomatoes" && p.PriceTiers.Count == 3);
+        Assert.Contains(catalog.Items, p => p.Title == "Lankaran Satsuma Mandarins");
+
+        // 3. Authenticate with seeded Farmer, Restaurant, and Driver bootstrap accounts using demo OTP 123456
+        var farmerAuth = await PostgresWebAppFactory.AuthenticateUserAsync(anonClient, "+994501111111");
+        Assert.Equal(UserRole.Farmer, farmerAuth.User.Role);
+        Assert.True(farmerAuth.User.IsVerified);
+
+        var restAuth = await PostgresWebAppFactory.AuthenticateUserAsync(anonClient, "+994502222221");
+        Assert.Equal(UserRole.Restaurant, restAuth.User.Role);
+        Assert.True(restAuth.User.IsVerified);
+
+        var driverAuth = await PostgresWebAppFactory.AuthenticateUserAsync(anonClient, "+994503333331");
+        Assert.Equal(UserRole.Driver, driverAuth.User.Role);
+        Assert.True(driverAuth.User.IsVerified);
+
+        using var restClient = PostgresWebAppFactory.CreateAuthedClient(_factory, restAuth.AccessToken);
+        using var driverClient = PostgresWebAppFactory.CreateAuthedClient(_factory, driverAuth.AccessToken);
+
+        // 4. Restaurant sees its seeded checkout groups; Driver sees seeded morning Milk-Run delivery runs
+        var groups = await restClient.GetFromJsonAsync<AgroMarket.Api.Common.PagedResult<CheckoutGroupDto>>(
+            "/api/orders/checkout-groups",
+            PostgresWebAppFactory.JsonOptions);
+        Assert.NotNull(groups);
+        Assert.True(groups.TotalCount >= 2);
+
+        var runs = await driverClient.GetFromJsonAsync<AgroMarket.Api.Common.PagedResult<DeliveryRunDto>>(
+            "/api/logistics/runs",
+            PostgresWebAppFactory.JsonOptions);
+        Assert.NotNull(runs);
+        Assert.True(runs.TotalCount >= 2);
+    }
+
     private static async Task<ProductDto> fProductAsync(HttpClient farmerClient)
     {
         var resp = await farmerClient.PostAsJsonAsync("/api/products", new CreateProduct.Request(

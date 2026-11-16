@@ -1,4 +1,7 @@
 using AgroMarket.Api.Common;
+using AgroMarket.Api.Database;
+using AgroMarket.Api.Infrastructure.Auth;
+using Microsoft.Extensions.Options;
 
 namespace AgroMarket.Api.Features.Admin;
 
@@ -23,6 +26,24 @@ public static class AdminEndpoints
             .WithValidation<MarkOrderPaid.Request>()
             .WithName("AdminMarkOrderPayment")
             .WithSummary("Reconcile COD, Bank Transfer, or Weekly Invoice payment settlement");
+
+        group.MapPost("/seed", async (
+            AppDbContext db,
+            IOptions<AuthBootstrapOptions> bootstrapOptions,
+            IOptions<SeedOptions> seedOptions,
+            ILoggerFactory loggerFactory,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await DatabaseSeeder.SeedAsync(
+                db,
+                bootstrapOptions.Value,
+                new SeedOptions { Enabled = true, SeedSampleData = seedOptions.Value.SeedSampleData || true },
+                loggerFactory.CreateLogger("DatabaseSeeder"),
+                cancellationToken);
+            return TypedResults.Ok(result);
+        })
+        .WithName("AdminSeedSampleData")
+        .WithSummary("Idempotently seed bootstrap accounts, business profiles, products, orders, and milk-run delivery runs");
 
         return api;
     }

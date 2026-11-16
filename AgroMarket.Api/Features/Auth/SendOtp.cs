@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using AgroMarket.Api.Common;
 using AgroMarket.Api.Database;
 using AgroMarket.Api.Database.Entities;
+using AgroMarket.Api.Infrastructure.Auth;
 using AgroMarket.Api.Infrastructure.Notifications;
 using FluentValidation;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -35,10 +36,12 @@ public static class SendOtp
         AppDbContext db,
         IOtpSender otpSender,
         IOptions<OtpOptions> otpOptions,
+        IOptions<AuthBootstrapOptions> bootstrapOptions,
         IHostEnvironment environment,
         CancellationToken cancellationToken)
     {
         var opts = otpOptions.Value;
+        var bootstrap = bootstrapOptions.Value;
         var normalizedPhone = PhoneNumberNormalizer.Normalize(request.PhoneNumber);
         var now = DateTimeOffset.UtcNow;
 
@@ -49,7 +52,10 @@ public static class SendOtp
                 setters => setters.SetProperty(o => o.ConsumedAt, now),
                 cancellationToken);
 
-        var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
+        var isBootstrapDemo = bootstrap.EnableBootstrapDemoOtp && bootstrap.IsBootstrapPhone(normalizedPhone);
+        var code = isBootstrapDemo && !string.IsNullOrWhiteSpace(bootstrap.BootstrapOtpCode)
+            ? bootstrap.BootstrapOtpCode.Trim()
+            : RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
         var expiresAt = now.AddMinutes(opts.ExpiryMinutes);
 
         var challenge = new OtpChallenge
@@ -64,9 +70,13 @@ public static class SendOtp
         db.OtpChallenges.Add(challenge);
         await db.SaveChangesAsync(cancellationToken);
 
-        await otpSender.SendOtpAsync(normalizedPhone, code, cancellationToken);
+        if (!isBootstrapDemo || otpSender is ConsoleOtpSender)
+        {
+            await otpSender.SendOtpAsync(normalizedPhone, code, cancellationToken);
+        }
 
-        var devCode = environment.IsDevelopment() && opts.ReturnCodeInResponse ? code : null;
+        var returnCode = (environment.IsDevelopment() && opts.ReturnCodeInResponse) || isBootstrapDemo;
+        var devCode = returnCode ? code : null;
         return TypedResults.Ok(new Response(normalizedPhone, expiresAt, devCode));
     }
 }
