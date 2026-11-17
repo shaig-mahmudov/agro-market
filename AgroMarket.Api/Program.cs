@@ -40,9 +40,16 @@ builder.Services.AddOpenApi();
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 builder.Services.AddAgroMarketRateLimiting();
 
+var defaultOrigins = new[]
+{
+    "https://ekinci.shaig.dev",
+    "https://shaig-mahmudov.github.io",
+    "http://localhost:3000"
+};
 var configuredOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 var flatOrigins = builder.Configuration.GetValue<string>("Cors:AllowedOrigins");
-var allowedOrigins = configuredOrigins
+var allowedOrigins = defaultOrigins
+    .Concat(configuredOrigins)
     .Concat(
         string.IsNullOrWhiteSpace(flatOrigins)
             ? []
@@ -50,6 +57,17 @@ var allowedOrigins = configuredOrigins
     .Select(origin =>
     {
         var trimmed = origin.Trim().TrimEnd('/');
+        if (trimmed == "*" || string.IsNullOrWhiteSpace(trimmed))
+        {
+            return trimmed;
+        }
+
+        if (!trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+            !trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            trimmed = $"https://{trimmed}";
+        }
+
         return Uri.TryCreate(trimmed, UriKind.Absolute, out var uri)
             ? $"{uri.Scheme}://{uri.Authority}"
             : trimmed;

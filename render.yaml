@@ -43,4 +43,4 @@ services:
       - key: Auth__BootstrapOtpCode
         value: "123456"
       - key: Cors__AllowedOrigins
-        value: "*"
+        value: https://ekinci.shaig.dev,https://shaig-mahmudov.github.io
