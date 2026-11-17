@@ -135,6 +135,55 @@ namespace AgroMarket.Api.Database.Migrations
                     b.ToTable("delivery_runs", (string)null);
                 });
 
+            modelBuilder.Entity("AgroMarket.Api.Database.Entities.MediaAsset", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<byte[]>("Data")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Folder")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("Height")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("SizeBytes")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Width")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId");
+
+                    b.HasIndex("Folder", "CreatedAt");
+
+                    b.ToTable("media_assets", (string)null);
+                });
+
             modelBuilder.Entity("AgroMarket.Api.Database.Entities.Order", b =>
                 {
                     b.Property<Guid>("Id")
@@ -162,6 +211,10 @@ namespace AgroMarket.Api.Database.Migrations
 
                     b.Property<Guid?>("DeliveryRunId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("DisputeNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
 
                     b.Property<decimal>("EstimatedTotalAmount")
                         .HasPrecision(12, 2)
@@ -483,6 +536,17 @@ namespace AgroMarket.Api.Database.Migrations
                         .IsRequired();
 
                     b.Navigation("Restaurant");
+                });
+
+            modelBuilder.Entity("AgroMarket.Api.Database.Entities.MediaAsset", b =>
+                {
+                    b.HasOne("AgroMarket.Api.Database.Entities.User", "Owner")
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Owner");
                 });
 
             modelBuilder.Entity("AgroMarket.Api.Database.Entities.Order", b =>

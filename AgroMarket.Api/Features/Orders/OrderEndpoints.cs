@@ -44,11 +44,11 @@ public static class OrderEndpoints
             .WithName("FarmerRespondToOrder")
             .WithSummary("Accept or reject a pending farmer order (restores stock on reject)");
 
-        group.MapPost("/{id:guid}/proof-upload-url", ReconcileDelivery.HandlePresignProofUpload)
+        group.MapPost("/{id:guid}/proof-photo", ReconcileDelivery.HandleUploadProofPhoto)
             .RequireAuthorization(AuthorizationPolicies.VerifiedUser)
-            .WithValidation<PresignUploadRequest>()
-            .WithName("CreateDeliveryProofUploadUrl")
-            .WithSummary("Generate a Cloudflare R2 presigned PUT URL for doorstep delivery/scale proof");
+            .DisableAntiforgery()
+            .WithName("UploadDeliveryProofPhoto")
+            .WithSummary("Upload a doorstep delivery/scale proof photo (PNG/JPG/JPEG/WebP), convert to WebP, and store in PostgreSQL");
 
         group.MapPatch("/{id:guid}/reconcile", ReconcileDelivery.Handle)
             .RequireAuthorization(AuthorizationPolicies.VerifiedUser)

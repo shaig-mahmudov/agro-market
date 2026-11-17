@@ -59,11 +59,6 @@ services:
       Auth__BootstrapOtpCode: ${BOOTSTRAP_OTP_CODE:-123456}
       Seed__Enabled: ${SEED_ENABLED:-true}
       Seed__SeedSampleData: ${SEED_SAMPLE_DATA:-true}
-      R2__AccountId: ${R2__AccountId:-}
-      R2__AccessKeyId: ${R2__AccessKeyId:-}
-      R2__SecretAccessKey: ${R2__SecretAccessKey:-}
-      R2__BucketName: ${R2__BucketName:-agromarket-media}
-      R2__PublicBaseUrl: ${R2__PublicBaseUrl:-}
       Cors__AllowedOrigins: ${CORS_ORIGIN:-https://localhost}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health || exit 1"]

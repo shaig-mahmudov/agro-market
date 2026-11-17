@@ -43,11 +43,14 @@ public static class ReconcileDelivery
         }
     }
 
-    public static Results<Ok<PresignedUploadResult>, ProblemHttpResult> HandlePresignProofUpload(
+    public static async Task<Results<Ok<MediaUploadResult>, ProblemHttpResult>> HandleUploadProofPhoto(
         Guid id,
-        PresignUploadRequest request,
+        IFormFile? file,
+        HttpContext httpContext,
         ClaimsPrincipal principal,
-        IObjectStorageService storageService)
+        AppDbContext db,
+        IImageStorageService imageStorage,
+        CancellationToken cancellationToken)
     {
         var userId = principal.GetUserId();
         var role = principal.GetUserRole();
@@ -56,13 +59,35 @@ public static class ReconcileDelivery
             return TypedResults.Problem(title: "Forbidden", statusCode: StatusCodes.Status403Forbidden);
         }
 
-        var result = storageService.CreatePresignedPutUrl(
-            userId,
-            $"delivery-proofs/{id:N}",
-            request.FileName,
-            request.ContentType);
+        if (file is null)
+        {
+            return TypedResults.Problem(
+                title: "Missing image file",
+                detail: "Multipart form field 'file' is required.",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
 
-        return TypedResults.Ok(result);
+        var publicBaseUrl = $"{httpContext.Request.Scheme}://{httpContext.Request.Host}{httpContext.Request.PathBase}";
+
+        try
+        {
+            var result = await imageStorage.ConvertToWebpAndStoreAsync(
+                db,
+                userId,
+                $"delivery-proofs/{id:N}",
+                file,
+                publicBaseUrl,
+                cancellationToken);
+
+            return TypedResults.Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return TypedResults.Problem(
+                title: "Invalid image upload",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status400BadRequest);
+        }
     }
 
     public static async Task<Results<Ok<OrderDto>, ProblemHttpResult>> Handle(

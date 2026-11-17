@@ -12,6 +12,7 @@ public sealed class SeedOptions
 
     public bool Enabled { get; set; } = true;
     public bool SeedSampleData { get; set; } = true;
+    public bool AutoMigrateOnStartup { get; set; } = true;
 }
 
 public sealed record BootstrapAccountInfo(
@@ -1065,14 +1066,19 @@ public sealed class DatabaseSeedHostedService(
 {
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        using var scope = serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        if (seedOptions.Value.AutoMigrateOnStartup)
+        {
+            await db.Database.MigrateAsync(cancellationToken);
+        }
+
         if (!seedOptions.Value.Enabled)
         {
             logger.LogInformation("Database seeding is disabled via configuration (Seed:Enabled=false).");
             return;
         }
-
-        using var scope = serviceProvider.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         await DatabaseSeeder.SeedAsync(
             db,

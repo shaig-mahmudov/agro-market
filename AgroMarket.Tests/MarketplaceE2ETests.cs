@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using AgroMarket.Api.Database.Entities;
 using AgroMarket.Api.Features.Admin;
@@ -6,6 +7,9 @@ using AgroMarket.Api.Features.Auth;
 using AgroMarket.Api.Features.Logistics;
 using AgroMarket.Api.Features.Orders;
 using AgroMarket.Api.Features.Products;
+using AgroMarket.Api.Infrastructure.Storage;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 
 namespace AgroMarket.Tests;
 
@@ -272,6 +276,56 @@ public sealed class MarketplaceE2ETests : IClassFixture<PostgresWebAppFactory>
             PostgresWebAppFactory.JsonOptions);
         Assert.NotNull(runs);
         Assert.True(runs.TotalCount >= 2);
+    }
+
+    [Fact]
+    public async Task UploadPngImage_ConvertsToWebp_StoresInDatabase_AndServesMedia()
+    {
+        using var anonClient = _factory.CreateClient();
+        var farmerAuth = await PostgresWebAppFactory.AuthenticateUserAsync(anonClient, "+994501111111");
+        using var farmerClient = PostgresWebAppFactory.CreateAuthedClient(_factory, farmerAuth.AccessToken);
+
+        // Generate an in-memory 32x32 PNG image
+        using var pngStream = new MemoryStream();
+        using (var img = new Image<Rgba32>(32, 32, new Rgba32(27, 67, 50)))
+        {
+            await img.SaveAsPngAsync(pngStream);
+        }
+        var pngBytes = pngStream.ToArray();
+
+        using var form = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(pngBytes);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+        form.Add(fileContent, "file", "fresh-tomato.png");
+
+        var uploadResp = await farmerClient.PostAsync("/api/products/images", form);
+        Assert.Equal(HttpStatusCode.OK, uploadResp.StatusCode);
+
+        var uploaded = await uploadResp.Content.ReadFromJsonAsync<MediaUploadResult>(PostgresWebAppFactory.JsonOptions);
+        Assert.NotNull(uploaded);
+        Assert.Equal("fresh-tomato.webp", uploaded.FileName);
+        Assert.Equal("image/webp", uploaded.ContentType);
+        Assert.Equal(32, uploaded.Width);
+        Assert.Equal(32, uploaded.Height);
+        Assert.EndsWith($"/api/media/{uploaded.Id:N}.webp", uploaded.Url);
+
+        // Fetch stored WebP image from PostgreSQL via GET /api/media/{id}.webp
+        var mediaPath = new Uri(uploaded.Url).PathAndQuery;
+        var getResp = await anonClient.GetAsync(mediaPath);
+        Assert.Equal(HttpStatusCode.OK, getResp.StatusCode);
+        Assert.Equal("image/webp", getResp.Content.Headers.ContentType?.MediaType);
+
+        var webpBytes = await getResp.Content.ReadAsByteArrayAsync();
+        Assert.True(webpBytes.Length > 12);
+        // Verify RIFF....WEBP header
+        Assert.Equal((byte)'R', webpBytes[0]);
+        Assert.Equal((byte)'I', webpBytes[1]);
+        Assert.Equal((byte)'F', webpBytes[2]);
+        Assert.Equal((byte)'F', webpBytes[3]);
+        Assert.Equal((byte)'W', webpBytes[8]);
+        Assert.Equal((byte)'E', webpBytes[9]);
+        Assert.Equal((byte)'B', webpBytes[10]);
+        Assert.Equal((byte)'P', webpBytes[11]);
     }
 
     private static async Task<ProductDto> fProductAsync(HttpClient farmerClient)

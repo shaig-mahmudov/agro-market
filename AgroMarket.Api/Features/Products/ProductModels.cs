@@ -1,8 +1,8 @@
 using System.Security.Claims;
 using AgroMarket.Api.Common;
+using AgroMarket.Api.Database;
 using AgroMarket.Api.Database.Entities;
 using AgroMarket.Api.Infrastructure.Storage;
-using FluentValidation;
 using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace AgroMarket.Api.Features.Products;
@@ -40,32 +40,6 @@ public sealed record ProductDto(
     uint RowVersion,
     IReadOnlyList<PriceTierDto> PriceTiers,
     FarmerSummaryDto? Farmer = null);
-
-public sealed record PresignUploadRequest(
-    string FileName,
-    string ContentType);
-
-public sealed class PresignUploadRequestValidator : AbstractValidator<PresignUploadRequest>
-{
-    private static readonly HashSet<string> AllowedTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "image/webp",
-        "image/jpeg",
-        "image/png"
-    };
-
-    public PresignUploadRequestValidator()
-    {
-        RuleFor(x => x.FileName)
-            .NotEmpty()
-            .MaximumLength(200);
-
-        RuleFor(x => x.ContentType)
-            .NotEmpty()
-            .Must(ct => AllowedTypes.Contains(ct))
-            .WithMessage("ContentType must be one of: image/webp, image/jpeg, image/png.");
-    }
-}
 
 public static class ProductMappings
 {
@@ -126,18 +100,52 @@ public static class ProductMappings
         return tiers.Select(t => t.MinQuantityKg).Distinct().Count() == tiers.Count;
     }
 
-    public static Ok<PresignedUploadResult> HandlePresignUpload(
-        PresignUploadRequest request,
+    public static async Task<Results<Ok<MediaUploadResult>, ProblemHttpResult>> HandleUploadProductImage(
+        IFormFile? file,
+        HttpContext httpContext,
         ClaimsPrincipal principal,
-        IObjectStorageService storageService)
+        AppDbContext db,
+        IImageStorageService imageStorage,
+        CancellationToken cancellationToken)
     {
-        var userId = principal.GetUserId();
-        var result = storageService.CreatePresignedPutUrl(
-            userId,
-            "products",
-            request.FileName,
-            request.ContentType);
+        var role = principal.GetUserRole();
+        if (role is not (UserRole.Farmer or UserRole.Admin))
+        {
+            return TypedResults.Problem(
+                title: "Forbidden",
+                detail: "Only verified farmers or admins can upload produce photos.",
+                statusCode: StatusCodes.Status403Forbidden);
+        }
 
-        return TypedResults.Ok(result);
+        if (file is null)
+        {
+            return TypedResults.Problem(
+                title: "Missing image file",
+                detail: "Multipart form field 'file' is required.",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var userId = principal.GetUserId();
+        var publicBaseUrl = $"{httpContext.Request.Scheme}://{httpContext.Request.Host}{httpContext.Request.PathBase}";
+
+        try
+        {
+            var result = await imageStorage.ConvertToWebpAndStoreAsync(
+                db,
+                userId,
+                "products",
+                file,
+                publicBaseUrl,
+                cancellationToken);
+
+            return TypedResults.Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return TypedResults.Problem(
+                title: "Invalid image upload",
+                detail: ex.Message,
+                statusCode: StatusCodes.Status400BadRequest);
+        }
     }
 }

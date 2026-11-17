@@ -18,6 +18,7 @@ coverage*/
 appsettings.Development.local.json
 
 # Node / Next.js
+agro-market-web/
 node_modules/
 .next/
 out/

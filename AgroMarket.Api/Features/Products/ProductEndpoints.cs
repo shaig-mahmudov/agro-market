@@ -22,11 +22,11 @@ public static class ProductEndpoints
             .WithName("GetProductById")
             .WithSummary("Get details and tiered pricing for a single produce listing");
 
-        group.MapPost("/upload-url", ProductMappings.HandlePresignUpload)
-            .RequireAuthorization(AuthorizationPolicies.VerifiedFarmer)
-            .WithValidation<PresignUploadRequest>()
-            .WithName("CreateProductUploadUrl")
-            .WithSummary("Generate a Cloudflare R2 presigned PUT URL for produce photo upload");
+        group.MapPost("/images", ProductMappings.HandleUploadProductImage)
+            .RequireAuthorization(AuthorizationPolicies.VerifiedUser)
+            .DisableAntiforgery()
+            .WithName("UploadProductImage")
+            .WithSummary("Upload a produce photo (PNG/JPG/JPEG/WebP), convert to WebP, and store in PostgreSQL");
 
         group.MapPost("/", CreateProduct.Handle)
             .RequireAuthorization(AuthorizationPolicies.VerifiedFarmer)

@@ -6,6 +6,7 @@ using AgroMarket.Api.Database.Entities;
 using AgroMarket.Api.Features.Admin;
 using AgroMarket.Api.Features.Auth;
 using AgroMarket.Api.Features.Logistics;
+using AgroMarket.Api.Features.Media;
 using AgroMarket.Api.Features.Orders;
 using AgroMarket.Api.Features.Products;
 using AgroMarket.Api.Features.Profiles;
@@ -17,6 +18,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Npgsql;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -75,8 +77,11 @@ builder.Services.AddCors(options =>
     });
 });
 
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-    ?? throw new InvalidOperationException("Connection string 'DefaultConnection' was not configured.");
+var rawConnectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? builder.Configuration["DATABASE_URL"]
+    ?? throw new InvalidOperationException("Connection string 'DefaultConnection' or 'DATABASE_URL' was not configured.");
+
+var connectionString = NormalizePostgresConnectionString(rawConnectionString);
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connectionString, npgsql =>
@@ -90,9 +95,8 @@ builder.Services.Configure<AuthBootstrapOptions>(builder.Configuration.GetSectio
 builder.Services.Configure<SeedOptions>(builder.Configuration.GetSection(SeedOptions.SectionName));
 builder.Services.Configure<OtpOptions>(builder.Configuration.GetSection(OtpOptions.SectionName));
 builder.Services.Configure<TelegramOptions>(builder.Configuration.GetSection(TelegramOptions.SectionName));
-builder.Services.Configure<R2Options>(builder.Configuration.GetSection(R2Options.SectionName));
 builder.Services.Configure<MarketplaceOptions>(builder.Configuration.GetSection(MarketplaceOptions.SectionName));
-builder.Services.AddSingleton<IObjectStorageService, R2ObjectStorageService>();
+builder.Services.AddSingleton<IImageStorageService, DatabaseImageStorageService>();
 builder.Services.AddHttpClient<ITelegramNotifier, TelegramBotService>();
 builder.Services.AddHostedService<DatabaseSeedHostedService>();
 builder.Services.AddHostedService<OrderExpirationWorker>();
@@ -182,10 +186,45 @@ api.MapGet("/ping", () => TypedResults.Ok(new
 api.MapAuthEndpoints();
 api.MapAdminEndpoints();
 api.MapProfileEndpoints();
+api.MapMediaEndpoints();
 api.MapProductEndpoints();
 api.MapOrderEndpoints();
 api.MapLogisticsEndpoints();
 
 app.Run();
+
+static string NormalizePostgresConnectionString(string raw)
+{
+    var trimmed = raw.Trim();
+    if (!trimmed.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) &&
+        !trimmed.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+    {
+        return trimmed;
+    }
+
+    var uri = new Uri(trimmed);
+    var userInfo = uri.UserInfo.Split(':', 2);
+    var username = userInfo.Length > 0 ? Uri.UnescapeDataString(userInfo[0]) : string.Empty;
+    var password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : string.Empty;
+    var database = uri.AbsolutePath.Trim('/');
+
+    var csb = new NpgsqlConnectionStringBuilder
+    {
+        Host = uri.Host,
+        Port = uri.Port > 0 ? uri.Port : 5432,
+        Database = database,
+        Username = username,
+        Password = password
+    };
+
+    if (!uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase) &&
+        !uri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase) &&
+        !uri.Host.Equals("postgres", StringComparison.OrdinalIgnoreCase))
+    {
+        csb.SslMode = SslMode.Prefer;
+    }
+
+    return csb.ConnectionString;
+}
 
 public partial class Program;
