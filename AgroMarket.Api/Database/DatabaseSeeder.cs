@@ -173,6 +173,9 @@ public static class DatabaseSeeder
     public static readonly Guid ProductKhachmazPotatoId = Guid.Parse("20000000-0000-0000-0000-000000000007");
     public static readonly Guid ProductLankaranMandarinId = Guid.Parse("20000000-0000-0000-0000-000000000008");
     public static readonly Guid ProductAstaraLemonId = Guid.Parse("20000000-0000-0000-0000-000000000009");
+    public static readonly Guid ProductGoychayPomegranateId = Guid.Parse("20000000-0000-0000-0000-000000000010");
+    public static readonly Guid ProductBardaOnionId = Guid.Parse("20000000-0000-0000-0000-000000000011");
+    public static readonly Guid ProductZiraEggplantId = Guid.Parse("20000000-0000-0000-0000-000000000012");
 
     // Deterministic DeliveryRun, CheckoutGroup, and Order IDs
     private static readonly Guid RunCompletedId = Guid.Parse("30000000-0000-0000-0000-000000000001");
@@ -298,22 +301,49 @@ public static class DatabaseSeeder
         var restCaspian = userByPhone["+994502222221"];
         var restIcherisheher = userByPhone["+994502222222"];
 
-        // 2. Seed sample products with volume price tiers & JSONB metadata
-        var existingProductIds = await db.Products
-            .Select(p => p.Id)
-            .ToHashSetAsync(cancellationToken);
-
+        // 2. Seed or synchronize sample products with real farm-gate volume price tiers & JSONB metadata
         var sampleProducts = BuildSampleProducts(farmerZira.Id, farmerGuba.Id, farmerLankaran.Id, today, now);
+        var sampleIds = sampleProducts.Select(p => p.Id).ToList();
+        var existingSampleProducts = await db.Products
+            .Include(p => p.PriceTiers)
+            .Where(p => sampleIds.Contains(p.Id))
+            .ToDictionaryAsync(p => p.Id, cancellationToken);
+
+        var productsUpdated = false;
         foreach (var product in sampleProducts)
         {
-            if (!existingProductIds.Contains(product.Id))
+            if (!existingSampleProducts.TryGetValue(product.Id, out var existing))
             {
                 db.Products.Add(product);
                 productsCreated++;
             }
+            else if (existing.BasePricePerKg != product.BasePricePerKg || existing.MinOrderKg != product.MinOrderKg)
+            {
+                existing.Category = product.Category;
+                existing.Title = product.Title;
+                existing.Description = product.Description;
+                existing.MinOrderKg = product.MinOrderKg;
+                existing.BasePricePerKg = product.BasePricePerKg;
+                existing.Metadata = product.Metadata;
+
+                db.PriceTiers.RemoveRange(existing.PriceTiers);
+                existing.PriceTiers.Clear();
+                foreach (var tier in product.PriceTiers)
+                {
+                    existing.PriceTiers.Add(new PriceTier
+                    {
+                        Id = tier.Id,
+                        ProductId = existing.Id,
+                        MinQuantityKg = tier.MinQuantityKg,
+                        PricePerKg = tier.PricePerKg
+                    });
+                }
+
+                productsUpdated = true;
+            }
         }
 
-        if (productsCreated > 0)
+        if (productsCreated > 0 || productsUpdated)
         {
             await db.SaveChangesAsync(cancellationToken);
         }
@@ -362,6 +392,23 @@ public static class DatabaseSeeder
             .Select(cg => cg.Id)
             .ToHashSetAsync(cancellationToken);
 
+        // If previously seeded orders still carry legacy retail unit prices, remove and re-seed them with farm-gate prices
+        var legacySeedOrder = await db.Orders
+            .AsNoTracking()
+            .FirstOrDefaultAsync(o => o.Id == OrderDeliveredPaidId && o.EstimatedTotalAmount > 40.00m, cancellationToken);
+        if (legacySeedOrder is not null)
+        {
+            var seedGroupIds = new[] { CheckoutGroupCompletedId, CheckoutGroupInTransitId, CheckoutGroupUpcomingId };
+            var oldGroups = await db.CheckoutGroups
+                .Include(cg => cg.Orders)
+                    .ThenInclude(o => o.Items)
+                .Where(cg => seedGroupIds.Contains(cg.Id))
+                .ToListAsync(cancellationToken);
+            db.CheckoutGroups.RemoveRange(oldGroups);
+            await db.SaveChangesAsync(cancellationToken);
+            existingGroupIds.ExceptWith(seedGroupIds);
+        }
+
         // Checkout Group 1: Yesterday's completed multi-farmer order for Caspian Bistro & Grill
         if (!existingGroupIds.Contains(CheckoutGroupCompletedId))
         {
@@ -386,11 +433,11 @@ public static class DatabaseSeeder
                         DeliveryRunId = RunCompletedId,
                         FulfillmentType = FulfillmentType.PlatformCourier,
                         Status = OrderStatus.Delivered,
-                        // Ordered 50 kg @ $1.85/kg = $92.50; delivered 49.50 kg @ $1.85/kg = $91.58 + $4.58 fee + $5.00 delivery = $101.16
-                        EstimatedTotalAmount = 92.50m,
-                        PlatformFeeAmount = 4.58m,
+                        // Farm-gate: 50 kg @ $0.44/kg (0.75 AZN/kg) = $22.00; delivered 49.50 kg @ $0.44 = $21.78 + $1.09 fee + $5.00 delivery = $27.87
+                        EstimatedTotalAmount = 22.00m,
+                        PlatformFeeAmount = 1.09m,
                         DeliveryFeeAmount = 5.00m,
-                        FinalTotalAmount = 101.16m,
+                        FinalTotalAmount = 27.87m,
                         PaymentMethod = PaymentMethod.CashOnDelivery,
                         PaymentStatus = PaymentStatus.Paid,
                         ExpiresAt = cg1CreatedAt.AddHours(3),
@@ -405,7 +452,7 @@ public static class DatabaseSeeder
                                 OrderId = OrderDeliveredPaidId,
                                 ProductId = ProductZiraPinkTomatoId,
                                 ProductTitleSnapshot = "Zira Pink Beefsteak Tomatoes",
-                                UnitPriceApplied = 1.85m,
+                                UnitPriceApplied = 0.44m,
                                 EstimatedWeightKg = 50.00m,
                                 ActualDeliveredWeightKg = 49.50m,
                                 RejectedWeightKg = 0.00m,
@@ -422,11 +469,11 @@ public static class DatabaseSeeder
                         DeliveryRunId = RunCompletedId,
                         FulfillmentType = FulfillmentType.PlatformCourier,
                         Status = OrderStatus.Delivered,
-                        // Ordered 30 kg @ $2.25/kg = $67.50 + $3.38 fee + $5.00 delivery = $75.88
-                        EstimatedTotalAmount = 67.50m,
-                        PlatformFeeAmount = 3.38m,
+                        // Farm-gate: 60 kg @ $0.40/kg (0.68 AZN/kg) = $24.00 + $1.20 fee + $5.00 delivery = $30.20
+                        EstimatedTotalAmount = 24.00m,
+                        PlatformFeeAmount = 1.20m,
                         DeliveryFeeAmount = 5.00m,
-                        FinalTotalAmount = 75.88m,
+                        FinalTotalAmount = 30.20m,
                         PaymentMethod = PaymentMethod.WeeklyInvoice,
                         PaymentStatus = PaymentStatus.Unpaid,
                         ExpiresAt = cg1CreatedAt.AddHours(3),
@@ -441,9 +488,9 @@ public static class DatabaseSeeder
                                 OrderId = OrderDeliveredInvoiceId,
                                 ProductId = ProductLankaranMandarinId,
                                 ProductTitleSnapshot = "Lankaran Satsuma Mandarins",
-                                UnitPriceApplied = 2.25m,
-                                EstimatedWeightKg = 30.00m,
-                                ActualDeliveredWeightKg = 30.00m,
+                                UnitPriceApplied = 0.40m,
+                                EstimatedWeightKg = 60.00m,
+                                ActualDeliveredWeightKg = 60.00m,
                                 RejectedWeightKg = 0.00m
                             }
                         ]
@@ -479,11 +526,11 @@ public static class DatabaseSeeder
                         DeliveryRunId = RunInTransitId,
                         FulfillmentType = FulfillmentType.PlatformCourier,
                         Status = OrderStatus.InTransit,
-                        // 10 kg Herbs @ $3.90 ($39.00) + 25 kg Cucumbers @ $1.65 ($41.25) = $80.25 + $4.01 fee + $5.00 delivery = $89.26
-                        EstimatedTotalAmount = 80.25m,
-                        PlatformFeeAmount = 4.01m,
+                        // Farm-gate: 15 kg Herbs @ $0.65 ($9.75) + 50 kg Cucumbers @ $0.29 ($14.50) = $24.25 + $1.21 fee + $5.00 delivery = $30.46
+                        EstimatedTotalAmount = 24.25m,
+                        PlatformFeeAmount = 1.21m,
                         DeliveryFeeAmount = 5.00m,
-                        FinalTotalAmount = 89.26m,
+                        FinalTotalAmount = 30.46m,
                         PaymentMethod = PaymentMethod.CashOnDelivery,
                         PaymentStatus = PaymentStatus.Unpaid,
                         ExpiresAt = cg2CreatedAt.AddHours(3),
@@ -497,8 +544,8 @@ public static class DatabaseSeeder
                                 OrderId = OrderInTransitId,
                                 ProductId = ProductCulinaryHerbsId,
                                 ProductTitleSnapshot = "Absheron Fresh Culinary Herbs Bundle",
-                                UnitPriceApplied = 3.90m,
-                                EstimatedWeightKg = 10.00m
+                                UnitPriceApplied = 0.65m,
+                                EstimatedWeightKg = 15.00m
                             },
                             new OrderItem
                             {
@@ -506,8 +553,8 @@ public static class DatabaseSeeder
                                 OrderId = OrderInTransitId,
                                 ProductId = ProductBabyCucumberId,
                                 ProductTitleSnapshot = "Zira Crispy Baby Cucumbers",
-                                UnitPriceApplied = 1.65m,
-                                EstimatedWeightKg = 25.00m
+                                UnitPriceApplied = 0.29m,
+                                EstimatedWeightKg = 50.00m
                             }
                         ]
                     },
@@ -520,11 +567,11 @@ public static class DatabaseSeeder
                         DeliveryRunId = RunInTransitId,
                         FulfillmentType = FulfillmentType.PlatformCourier,
                         Status = OrderStatus.DeliveredPendingApproval,
-                        // Ordered 50 kg @ $1.50 = $75.00; delivered 56 kg with 3 kg rejected -> 53 chargeable kg @ $1.50 = $79.50 + $3.98 fee + $5.00 delivery = $88.48
-                        EstimatedTotalAmount = 75.00m,
-                        PlatformFeeAmount = 3.98m,
+                        // Farm-gate: Ordered 80 kg @ $0.32 (0.54 AZN/kg) = $25.60; delivered 90 kg with 4 kg rejected -> 86 chargeable kg @ $0.32 = $27.52 + $1.38 fee + $5.00 delivery = $33.90
+                        EstimatedTotalAmount = 25.60m,
+                        PlatformFeeAmount = 1.38m,
                         DeliveryFeeAmount = 5.00m,
-                        FinalTotalAmount = 88.48m,
+                        FinalTotalAmount = 33.90m,
                         PaymentMethod = PaymentMethod.WeeklyInvoice,
                         PaymentStatus = PaymentStatus.Unpaid,
                         ExpiresAt = cg2CreatedAt.AddHours(3),
@@ -538,10 +585,10 @@ public static class DatabaseSeeder
                                 OrderId = OrderPendingApprovalId,
                                 ProductId = ProductGubaGoldenAppleId,
                                 ProductTitleSnapshot = "Guba Golden Delicious Apples",
-                                UnitPriceApplied = 1.50m,
-                                EstimatedWeightKg = 50.00m,
-                                ActualDeliveredWeightKg = 56.00m,
-                                RejectedWeightKg = 3.00m,
+                                UnitPriceApplied = 0.32m,
+                                EstimatedWeightKg = 80.00m,
+                                ActualDeliveredWeightKg = 90.00m,
+                                RejectedWeightKg = 4.00m,
                                 ProofPhotoUrl = "https://images.unsplash.com/photo-1560806887-1e4cd0b6cbd6?auto=format&fit=crop&w=800&q=80"
                             }
                         ]
@@ -577,11 +624,11 @@ public static class DatabaseSeeder
                         DeliveryRunId = null,
                         FulfillmentType = FulfillmentType.PlatformCourier,
                         Status = OrderStatus.Confirmed,
-                        // 60 kg Potatoes @ $0.82 ($49.20) + 50 kg Honeycrisp Apples @ $1.95 ($97.50) = $146.70 + $7.34 fee + $5.00 delivery = $159.04
-                        EstimatedTotalAmount = 146.70m,
-                        PlatformFeeAmount = 7.34m,
+                        // Farm-gate: 100 kg Potatoes @ $0.20 ($20.00) + 60 kg Honeycrisp Apples @ $0.44 ($26.40) = $46.40 + $2.32 fee + $5.00 delivery = $53.72
+                        EstimatedTotalAmount = 46.40m,
+                        PlatformFeeAmount = 2.32m,
                         DeliveryFeeAmount = 5.00m,
-                        FinalTotalAmount = 159.04m,
+                        FinalTotalAmount = 53.72m,
                         PaymentMethod = PaymentMethod.BankTransfer,
                         PaymentStatus = PaymentStatus.Unpaid,
                         ExpiresAt = now.AddHours(2.5),
@@ -595,8 +642,8 @@ public static class DatabaseSeeder
                                 OrderId = OrderConfirmedReadyId,
                                 ProductId = ProductKhachmazPotatoId,
                                 ProductTitleSnapshot = "Khachmaz Agria Roasting Potatoes",
-                                UnitPriceApplied = 0.82m,
-                                EstimatedWeightKg = 60.00m
+                                UnitPriceApplied = 0.20m,
+                                EstimatedWeightKg = 100.00m
                             },
                             new OrderItem
                             {
@@ -604,8 +651,8 @@ public static class DatabaseSeeder
                                 OrderId = OrderConfirmedReadyId,
                                 ProductId = ProductGubaHoneycrispId,
                                 ProductTitleSnapshot = "Guba Honeycrisp Orchard Apples",
-                                UnitPriceApplied = 1.95m,
-                                EstimatedWeightKg = 50.00m
+                                UnitPriceApplied = 0.44m,
+                                EstimatedWeightKg = 60.00m
                             }
                         ]
                     },
@@ -618,11 +665,11 @@ public static class DatabaseSeeder
                         DeliveryRunId = null,
                         FulfillmentType = FulfillmentType.PlatformCourier,
                         Status = OrderStatus.Pending,
-                        // 25 kg Meyer Lemons @ $2.75 ($68.75) + $3.44 fee + $5.00 delivery = $77.19
-                        EstimatedTotalAmount = 68.75m,
-                        PlatformFeeAmount = 3.44m,
+                        // Farm-gate: 40 kg Meyer Lemons @ $0.59 (1.00 AZN/kg) = $23.60 + $1.18 fee + $5.00 delivery = $29.78
+                        EstimatedTotalAmount = 23.60m,
+                        PlatformFeeAmount = 1.18m,
                         DeliveryFeeAmount = 5.00m,
-                        FinalTotalAmount = 77.19m,
+                        FinalTotalAmount = 29.78m,
                         PaymentMethod = PaymentMethod.BankTransfer,
                         PaymentStatus = PaymentStatus.Unpaid,
                         ExpiresAt = now.AddHours(2.5),
@@ -635,8 +682,8 @@ public static class DatabaseSeeder
                                 OrderId = OrderPendingFarmerId,
                                 ProductId = ProductAstaraLemonId,
                                 ProductTitleSnapshot = "Astara Aromatic Meyer Lemons",
-                                UnitPriceApplied = 2.75m,
-                                EstimatedWeightKg = 25.00m
+                                UnitPriceApplied = 0.59m,
+                                EstimatedWeightKg = 40.00m
                             }
                         ]
                     }
@@ -676,16 +723,17 @@ public static class DatabaseSeeder
             FarmerId = farmerZiraId,
             Category = "Tomatoes",
             Title = "Zira Pink Beefsteak Tomatoes",
-            Description = "Vine-ripened Absheron pink beefsteak tomatoes harvested at peak Brix sweetness for salads and grill.",
-            AvailableStockKg = 450.00m,
-            MinOrderKg = 10.00m,
-            BasePricePerKg = 2.40m,
+            Description = "Direct greenhouse-gate wholesale price (first-hand farmer rate, no middleman markup). Vine-ripened Absheron pink beefsteak tomatoes harvested at dawn.",
+            AvailableStockKg = 650.00m,
+            MinOrderKg = 15.00m,
+            // 0.85 AZN/kg ($0.50/kg) farm-gate price
+            BasePricePerKg = 0.50m,
             Metadata = new ProductMetadata
             {
                 Variety = "Zira Pink Heirloom",
                 HarvestDate = today,
                 Grade = "Grade A (Extra)",
-                Packaging = "10 kg wooden crate",
+                Packaging = "15 kg wooden crate",
                 IsOrganic = true
             },
             ImageUrls =
@@ -700,22 +748,25 @@ public static class DatabaseSeeder
                 {
                     Id = Guid.Parse("21000000-0000-0000-0000-000000000001"),
                     ProductId = ProductZiraPinkTomatoId,
-                    MinQuantityKg = 25.00m,
-                    PricePerKg = 2.10m
+                    MinQuantityKg = 50.00m,
+                    // 0.75 AZN/kg
+                    PricePerKg = 0.44m
                 },
                 new PriceTier
                 {
                     Id = Guid.Parse("21000000-0000-0000-0000-000000000002"),
                     ProductId = ProductZiraPinkTomatoId,
-                    MinQuantityKg = 50.00m,
-                    PricePerKg = 1.85m
+                    MinQuantityKg = 150.00m,
+                    // 0.65 AZN/kg
+                    PricePerKg = 0.38m
                 },
                 new PriceTier
                 {
                     Id = Guid.Parse("21000000-0000-0000-0000-000000000003"),
                     ProductId = ProductZiraPinkTomatoId,
-                    MinQuantityKg = 100.00m,
-                    PricePerKg = 1.65m
+                    MinQuantityKg = 300.00m,
+                    // 0.58 AZN/kg
+                    PricePerKg = 0.34m
                 }
             ]
         },
@@ -725,10 +776,11 @@ public static class DatabaseSeeder
             FarmerId = farmerZiraId,
             Category = "Tomatoes",
             Title = "Sweet Cluster Cherry Tomatoes",
-            Description = "Hothouse cherry tomatoes on the vine with vibrant red skin and balanced acidity for fine dining plating.",
-            AvailableStockKg = 180.00m,
-            MinOrderKg = 5.00m,
-            BasePricePerKg = 3.20m,
+            Description = "First-hand greenhouse producer rate. Cluster cherry tomatoes on the vine with vibrant red skin and balanced acidity for HoReCa kitchens.",
+            AvailableStockKg = 240.00m,
+            MinOrderKg = 10.00m,
+            // 1.19 AZN/kg ($0.70/kg) farm-gate price
+            BasePricePerKg = 0.70m,
             Metadata = new ProductMetadata
             {
                 Variety = "Piccolo Truss",
@@ -749,15 +801,17 @@ public static class DatabaseSeeder
                 {
                     Id = Guid.Parse("21000000-0000-0000-0000-000000000004"),
                     ProductId = ProductCherryTomatoId,
-                    MinQuantityKg = 20.00m,
-                    PricePerKg = 2.85m
+                    MinQuantityKg = 30.00m,
+                    // 1.05 AZN/kg
+                    PricePerKg = 0.62m
                 },
                 new PriceTier
                 {
                     Id = Guid.Parse("21000000-0000-0000-0000-000000000005"),
                     ProductId = ProductCherryTomatoId,
-                    MinQuantityKg = 50.00m,
-                    PricePerKg = 2.50m
+                    MinQuantityKg = 80.00m,
+                    // 0.92 AZN/kg
+                    PricePerKg = 0.54m
                 }
             ]
         },
@@ -767,16 +821,17 @@ public static class DatabaseSeeder
             FarmerId = farmerZiraId,
             Category = "Greens",
             Title = "Absheron Fresh Culinary Herbs Bundle",
-            Description = "Morning-cut coriander, dill, purple reyhan (basil), and tarragon washed and hydro-cooled for kitchen prep.",
-            AvailableStockKg = 120.00m,
-            MinOrderKg = 3.00m,
-            BasePricePerKg = 4.50m,
+            Description = "Field-gate wholesale bundle rate (~0.13 AZN/bundle equivalent). Morning-cut coriander, dill, purple reyhan, and tarragon hydro-cooled at the farm.",
+            AvailableStockKg = 180.00m,
+            MinOrderKg = 5.00m,
+            // 1.29 AZN/kg ($0.76/kg) farm-gate price
+            BasePricePerKg = 0.76m,
             Metadata = new ProductMetadata
             {
                 Variety = "Mixed Aromatic Greens",
                 HarvestDate = today,
                 Grade = "Grade A (Extra)",
-                Packaging = "3 kg chilled crate",
+                Packaging = "5 kg chilled crate",
                 IsOrganic = true
             },
             ImageUrls =
@@ -791,15 +846,17 @@ public static class DatabaseSeeder
                 {
                     Id = Guid.Parse("21000000-0000-0000-0000-000000000006"),
                     ProductId = ProductCulinaryHerbsId,
-                    MinQuantityKg = 10.00m,
-                    PricePerKg = 3.90m
+                    MinQuantityKg = 15.00m,
+                    // 1.11 AZN/kg
+                    PricePerKg = 0.65m
                 },
                 new PriceTier
                 {
                     Id = Guid.Parse("21000000-0000-0000-0000-000000000007"),
                     ProductId = ProductCulinaryHerbsId,
-                    MinQuantityKg = 25.00m,
-                    PricePerKg = 3.40m
+                    MinQuantityKg = 40.00m,
+                    // 0.95 AZN/kg
+                    PricePerKg = 0.56m
                 }
             ]
         },
@@ -807,18 +864,19 @@ public static class DatabaseSeeder
         {
             Id = ProductBabyCucumberId,
             FarmerId = farmerZiraId,
-            Category = "Vegetables",
+            Category = "Cucumbers",
             Title = "Zira Crispy Baby Cucumbers",
-            Description = "Crunchy, thin-skinned greenhouse cucumbers ideal for fresh table mezzes and pickling.",
-            AvailableStockKg = 320.00m,
-            MinOrderKg = 8.00m,
-            BasePricePerKg = 1.90m,
+            Description = "Direct farm-gate price before Meyveli wholesale markup. Crunchy, thin-skinned Melita greenhouse cucumbers picked same morning.",
+            AvailableStockKg = 500.00m,
+            MinOrderKg = 15.00m,
+            // 0.60 AZN/kg ($0.35/kg) farm-gate price
+            BasePricePerKg = 0.35m,
             Metadata = new ProductMetadata
             {
                 Variety = "Melita Prickly",
                 HarvestDate = today,
                 Grade = "Grade A",
-                Packaging = "8 kg plastic crate",
+                Packaging = "15 kg plastic crate",
                 IsOrganic = false
             },
             ImageUrls =
@@ -833,15 +891,17 @@ public static class DatabaseSeeder
                 {
                     Id = Guid.Parse("21000000-0000-0000-0000-000000000008"),
                     ProductId = ProductBabyCucumberId,
-                    MinQuantityKg = 25.00m,
-                    PricePerKg = 1.65m
+                    MinQuantityKg = 50.00m,
+                    // 0.49 AZN/kg
+                    PricePerKg = 0.29m
                 },
                 new PriceTier
                 {
                     Id = Guid.Parse("21000000-0000-0000-0000-000000000009"),
                     ProductId = ProductBabyCucumberId,
-                    MinQuantityKg = 60.00m,
-                    PricePerKg = 1.45m
+                    MinQuantityKg = 120.00m,
+                    // 0.43 AZN/kg
+                    PricePerKg = 0.25m
                 }
             ]
         },
@@ -851,16 +911,17 @@ public static class DatabaseSeeder
             FarmerId = farmerGubaId,
             Category = "Fruits",
             Title = "Guba Golden Delicious Apples",
-            Description = "High-altitude Guba orchard apples with crisp texture and natural honey aroma.",
-            AvailableStockKg = 600.00m,
-            MinOrderKg = 15.00m,
-            BasePricePerKg = 1.80m,
+            Description = "Orchard-gate first-hand price in Guba (sold to middlemen at 0.48–0.65 AZN/kg). High-altitude Golden apples with crisp texture and honey aroma.",
+            AvailableStockKg = 850.00m,
+            MinOrderKg = 20.00m,
+            // 0.65 AZN/kg ($0.38/kg) farm-gate price
+            BasePricePerKg = 0.38m,
             Metadata = new ProductMetadata
             {
                 Variety = "Guba Golden",
                 HarvestDate = today.AddDays(-2),
-                Grade = "Grade A",
-                Packaging = "15 kg wooden crate",
+                Grade = "Grade A (70mm+)",
+                Packaging = "20 kg wooden crate",
                 IsOrganic = true
             },
             ImageUrls =
@@ -875,15 +936,17 @@ public static class DatabaseSeeder
                 {
                     Id = Guid.Parse("21000000-0000-0000-0000-000000000010"),
                     ProductId = ProductGubaGoldenAppleId,
-                    MinQuantityKg = 50.00m,
-                    PricePerKg = 1.50m
+                    MinQuantityKg = 80.00m,
+                    // 0.54 AZN/kg
+                    PricePerKg = 0.32m
                 },
                 new PriceTier
                 {
                     Id = Guid.Parse("21000000-0000-0000-0000-000000000011"),
                     ProductId = ProductGubaGoldenAppleId,
-                    MinQuantityKg = 120.00m,
-                    PricePerKg = 1.30m
+                    MinQuantityKg = 200.00m,
+                    // 0.48 AZN/kg
+                    PricePerKg = 0.28m
                 }
             ]
         },
@@ -893,16 +956,17 @@ public static class DatabaseSeeder
             FarmerId = farmerGubaId,
             Category = "Fruits",
             Title = "Guba Honeycrisp Orchard Apples",
-            Description = "Premium bi-color red and gold apples suited for pastry, charcuterie boards, and fresh pressing.",
-            AvailableStockKg = 380.00m,
-            MinOrderKg = 10.00m,
-            BasePricePerKg = 2.25m,
+            Description = "Direct Guba cold-storage orchard price. Premium bi-color red and gold apples suited for desserts, fresh juice pressing, and table service.",
+            AvailableStockKg = 520.00m,
+            MinOrderKg = 15.00m,
+            // 0.85 AZN/kg ($0.50/kg) farm-gate price
+            BasePricePerKg = 0.50m,
             Metadata = new ProductMetadata
             {
-                Variety = "Honeycrisp",
+                Variety = "Honeycrisp / Fuji",
                 HarvestDate = today.AddDays(-1),
                 Grade = "Grade A (Extra)",
-                Packaging = "12 kg layered carton",
+                Packaging = "15 kg layered carton",
                 IsOrganic = true
             },
             ImageUrls =
@@ -917,15 +981,17 @@ public static class DatabaseSeeder
                 {
                     Id = Guid.Parse("21000000-0000-0000-0000-000000000012"),
                     ProductId = ProductGubaHoneycrispId,
-                    MinQuantityKg = 40.00m,
-                    PricePerKg = 1.95m
+                    MinQuantityKg = 60.00m,
+                    // 0.75 AZN/kg
+                    PricePerKg = 0.44m
                 },
                 new PriceTier
                 {
                     Id = Guid.Parse("21000000-0000-0000-0000-000000000013"),
                     ProductId = ProductGubaHoneycrispId,
-                    MinQuantityKg = 100.00m,
-                    PricePerKg = 1.75m
+                    MinQuantityKg = 150.00m,
+                    // 0.65 AZN/kg
+                    PricePerKg = 0.38m
                 }
             ]
         },
@@ -933,12 +999,13 @@ public static class DatabaseSeeder
         {
             Id = ProductKhachmazPotatoId,
             FarmerId = farmerGubaId,
-            Category = "Root Vegetables",
+            Category = "Potatoes",
             Title = "Khachmaz Agria Roasting Potatoes",
-            Description = "High-starch yellow-flesh potatoes brushed and graded for French fries, roasting, and mash.",
-            AvailableStockKg = 950.00m,
+            Description = "First-hand field-gate sack price (0.29–0.41 AZN/kg at farm gate). High-starch yellow-flesh potatoes graded for fries, roasting, and mash.",
+            AvailableStockKg = 1500.00m,
             MinOrderKg = 25.00m,
-            BasePricePerKg = 0.95m,
+            // 0.41 AZN/kg ($0.24/kg) farm-gate price
+            BasePricePerKg = 0.24m,
             Metadata = new ProductMetadata
             {
                 Variety = "Agria Gold",
@@ -959,15 +1026,17 @@ public static class DatabaseSeeder
                 {
                     Id = Guid.Parse("21000000-0000-0000-0000-000000000014"),
                     ProductId = ProductKhachmazPotatoId,
-                    MinQuantityKg = 50.00m,
-                    PricePerKg = 0.82m
+                    MinQuantityKg = 100.00m,
+                    // 0.34 AZN/kg
+                    PricePerKg = 0.20m
                 },
                 new PriceTier
                 {
                     Id = Guid.Parse("21000000-0000-0000-0000-000000000015"),
                     ProductId = ProductKhachmazPotatoId,
-                    MinQuantityKg = 150.00m,
-                    PricePerKg = 0.70m
+                    MinQuantityKg = 300.00m,
+                    // 0.29 AZN/kg
+                    PricePerKg = 0.17m
                 }
             ]
         },
@@ -975,18 +1044,19 @@ public static class DatabaseSeeder
         {
             Id = ProductLankaranMandarinId,
             FarmerId = farmerLankaranId,
-            Category = "Citrus",
+            Category = "Fruits",
             Title = "Lankaran Satsuma Mandarins",
-            Description = "Seedless, easy-peel subtropical mandarins from Lankaran groves with intense citrus aroma.",
-            AvailableStockKg = 420.00m,
-            MinOrderKg = 10.00m,
-            BasePricePerKg = 2.60m,
+            Description = "Direct Lankaran grove-gate price (sold to middleman trucks at 0.58–0.80 AZN/kg). Seedless, easy-peel subtropical mandarins.",
+            AvailableStockKg = 680.00m,
+            MinOrderKg = 15.00m,
+            // 0.80 AZN/kg ($0.47/kg) farm-gate price
+            BasePricePerKg = 0.47m,
             Metadata = new ProductMetadata
             {
                 Variety = "Lankaran Satsuma Unshiu",
                 HarvestDate = today.AddDays(-1),
                 Grade = "Grade A (Sweet)",
-                Packaging = "12 kg wooden crate",
+                Packaging = "15 kg wooden crate",
                 IsOrganic = true
             },
             ImageUrls =
@@ -1001,15 +1071,17 @@ public static class DatabaseSeeder
                 {
                     Id = Guid.Parse("21000000-0000-0000-0000-000000000016"),
                     ProductId = ProductLankaranMandarinId,
-                    MinQuantityKg = 30.00m,
-                    PricePerKg = 2.25m
+                    MinQuantityKg = 60.00m,
+                    // 0.68 AZN/kg
+                    PricePerKg = 0.40m
                 },
                 new PriceTier
                 {
                     Id = Guid.Parse("21000000-0000-0000-0000-000000000017"),
                     ProductId = ProductLankaranMandarinId,
-                    MinQuantityKg = 80.00m,
-                    PricePerKg = 1.95m
+                    MinQuantityKg = 150.00m,
+                    // 0.58 AZN/kg
+                    PricePerKg = 0.34m
                 }
             ]
         },
@@ -1017,12 +1089,13 @@ public static class DatabaseSeeder
         {
             Id = ProductAstaraLemonId,
             FarmerId = farmerLankaranId,
-            Category = "Citrus",
+            Category = "Fruits",
             Title = "Astara Aromatic Meyer Lemons",
-            Description = "Thin-rinded, deep yellow Meyer lemons prized for seafood dressing, tea service, and bar craft.",
-            AvailableStockKg = 260.00m,
-            MinOrderKg = 5.00m,
-            BasePricePerKg = 3.10m,
+            Description = "First-hand Astara citrus grove rate (0.88–1.16 AZN/kg). Thin-rinded, deep yellow Meyer lemons prized for seafood, tea service, and bar craft.",
+            AvailableStockKg = 340.00m,
+            MinOrderKg = 10.00m,
+            // 1.16 AZN/kg ($0.68/kg) farm-gate price
+            BasePricePerKg = 0.68m,
             Metadata = new ProductMetadata
             {
                 Variety = "Astara Meyer",
@@ -1043,15 +1116,152 @@ public static class DatabaseSeeder
                 {
                     Id = Guid.Parse("21000000-0000-0000-0000-000000000018"),
                     ProductId = ProductAstaraLemonId,
-                    MinQuantityKg = 25.00m,
-                    PricePerKg = 2.75m
+                    MinQuantityKg = 40.00m,
+                    // 1.00 AZN/kg
+                    PricePerKg = 0.59m
                 },
                 new PriceTier
                 {
                     Id = Guid.Parse("21000000-0000-0000-0000-000000000019"),
                     ProductId = ProductAstaraLemonId,
-                    MinQuantityKg = 60.00m,
-                    PricePerKg = 2.45m
+                    MinQuantityKg = 100.00m,
+                    // 0.88 AZN/kg
+                    PricePerKg = 0.52m
+                }
+            ]
+        },
+        new Product
+        {
+            Id = ProductGoychayPomegranateId,
+            FarmerId = farmerLankaranId,
+            Category = "Fruits",
+            Title = "Goychay Guloysha Pomegranates",
+            Description = "Direct orchard-gate wholesale price (0.68–0.90 AZN/kg). Ruby-red, thin-skinned Guloysha pomegranates for fresh pressing, narsharab, and grill.",
+            AvailableStockKg = 600.00m,
+            MinOrderKg = 15.00m,
+            // 0.90 AZN/kg ($0.53/kg) farm-gate price
+            BasePricePerKg = 0.53m,
+            Metadata = new ProductMetadata
+            {
+                Variety = "Guloysha Red",
+                HarvestDate = today.AddDays(-1),
+                Grade = "Grade A (350g+)",
+                Packaging = "15 kg wooden crate",
+                IsOrganic = true
+            },
+            ImageUrls =
+            [
+                "https://images.unsplash.com/photo-1541344999736-83eca272f6fc?auto=format&fit=crop&w=800&q=80"
+            ],
+            IsActive = true,
+            UpdatedAt = now.AddHours(-2),
+            PriceTiers =
+            [
+                new PriceTier
+                {
+                    Id = Guid.Parse("21000000-0000-0000-0000-000000000020"),
+                    ProductId = ProductGoychayPomegranateId,
+                    MinQuantityKg = 50.00m,
+                    // 0.78 AZN/kg
+                    PricePerKg = 0.46m
+                },
+                new PriceTier
+                {
+                    Id = Guid.Parse("21000000-0000-0000-0000-000000000021"),
+                    ProductId = ProductGoychayPomegranateId,
+                    MinQuantityKg = 150.00m,
+                    // 0.68 AZN/kg
+                    PricePerKg = 0.40m
+                }
+            ]
+        },
+        new Product
+        {
+            Id = ProductBardaOnionId,
+            FarmerId = farmerGubaId,
+            Category = "Onions",
+            Title = "Barda Golden & Red Cooking Onions",
+            Description = "Field-gate sack price (0.24–0.32 AZN/kg paid to farmers by wholesale buyers). Sun-cured, firm cooking onions for stocks, kebabs, and grill.",
+            AvailableStockKg = 1800.00m,
+            MinOrderKg = 25.00m,
+            // 0.32 AZN/kg ($0.19/kg) farm-gate price
+            BasePricePerKg = 0.19m,
+            Metadata = new ProductMetadata
+            {
+                Variety = "Barda Sweet Yellow",
+                HarvestDate = today.AddDays(-4),
+                Grade = "Grade A (50-70mm)",
+                Packaging = "25 kg mesh sack",
+                IsOrganic = false
+            },
+            ImageUrls =
+            [
+                "https://images.unsplash.com/photo-1508747703725-719777637510?auto=format&fit=crop&w=800&q=80"
+            ],
+            IsActive = true,
+            UpdatedAt = now.AddHours(-5),
+            PriceTiers =
+            [
+                new PriceTier
+                {
+                    Id = Guid.Parse("21000000-0000-0000-0000-000000000022"),
+                    ProductId = ProductBardaOnionId,
+                    MinQuantityKg = 100.00m,
+                    // 0.27 AZN/kg
+                    PricePerKg = 0.16m
+                },
+                new PriceTier
+                {
+                    Id = Guid.Parse("21000000-0000-0000-0000-000000000023"),
+                    ProductId = ProductBardaOnionId,
+                    MinQuantityKg = 300.00m,
+                    // 0.24 AZN/kg
+                    PricePerKg = 0.14m
+                }
+            ]
+        },
+        new Product
+        {
+            Id = ProductZiraEggplantId,
+            FarmerId = farmerZiraId,
+            Category = "Tomatoes",
+            Title = "Zira Glossy Purple Eggplants (Badımcan)",
+            Description = "First-hand farm-gate price (0.39–0.54 AZN/kg). Seedless, thin-skinned purple eggplants ideal for mangal salad, dolma, and charcoal grilling.",
+            AvailableStockKg = 410.00m,
+            MinOrderKg = 15.00m,
+            // 0.54 AZN/kg ($0.32/kg) farm-gate price
+            BasePricePerKg = 0.32m,
+            Metadata = new ProductMetadata
+            {
+                Variety = "Absheron Long",
+                HarvestDate = today,
+                Grade = "Grade A",
+                Packaging = "15 kg carton crate",
+                IsOrganic = true
+            },
+            ImageUrls =
+            [
+                "https://images.unsplash.com/photo-1615484477778-ca3b77940c25?auto=format&fit=crop&w=800&q=80"
+            ],
+            IsActive = true,
+            UpdatedAt = now.AddHours(-2),
+            PriceTiers =
+            [
+                new PriceTier
+                {
+                    Id = Guid.Parse("21000000-0000-0000-0000-000000000024"),
+                    ProductId = ProductZiraEggplantId,
+                    MinQuantityKg = 50.00m,
+                    // 0.46 AZN/kg
+                    PricePerKg = 0.27m
+                },
+                new PriceTier
+                {
+                    Id = Guid.Parse("21000000-0000-0000-0000-000000000025"),
+                    ProductId = ProductZiraEggplantId,
+                    MinQuantityKg = 120.00m,
+                    // 0.39 AZN/kg
+                    PricePerKg = 0.23m
                 }
             ]
         }
