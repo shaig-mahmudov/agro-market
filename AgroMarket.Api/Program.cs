@@ -77,9 +77,13 @@ builder.Services.AddCors(options =>
     });
 });
 
-var rawConnectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-    ?? builder.Configuration["DATABASE_URL"]
-    ?? throw new InvalidOperationException("Connection string 'DefaultConnection' or 'DATABASE_URL' was not configured.");
+var databaseUrl = builder.Configuration["DATABASE_URL"];
+var defaultConnection = builder.Configuration.GetConnectionString("DefaultConnection");
+var rawConnectionString = !string.IsNullOrWhiteSpace(databaseUrl)
+    ? databaseUrl
+    : !string.IsNullOrWhiteSpace(defaultConnection)
+        ? defaultConnection
+        : throw new InvalidOperationException("Connection string 'DefaultConnection' or 'DATABASE_URL' was not configured.");
 
 var connectionString = NormalizePostgresConnectionString(rawConnectionString);
 

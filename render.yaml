@@ -22,6 +22,10 @@ services:
         fromDatabase:
           name: agromarket-db
           property: connectionString
+      - key: ConnectionStrings__DefaultConnection
+        fromDatabase:
+          name: agromarket-db
+          property: connectionString
       - key: Jwt__Issuer
         value: AgroMarket.Api
       - key: Jwt__Audience
